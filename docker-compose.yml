@@ -1,0 +1,41 @@
+# =============================================================================
+# OPTIONAL: PostgreSQL scale-up alternative to SQLite
+# =============================================================================
+# Only use this if you have >50k episodes or are running distributed experiments.
+# The default backend is SQLite (zero dependencies, runs entirely in-process).
+#
+# To use: docker-compose up -d
+# Then set SQLITE_DB_PATH to use a PostgreSQL connection string instead,
+# and update sql_memory.py to use psycopg2.
+# =============================================================================
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: reflexion_postgres
+    environment:
+      POSTGRES_USER: reflexion
+      POSTGRES_PASSWORD: reflexion_password
+      POSTGRES_DB: reflexion_episodes
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: reflexion_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@reflexion.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

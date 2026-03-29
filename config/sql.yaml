@@ -1,0 +1,4 @@
+# SQL memory backend — structured retrieval by domain and error_type
+# Inherits all settings from base_config.yaml
+memory_backend: sql
+retrieval_scope: domain   # 'domain' | 'global' — see base_config for description

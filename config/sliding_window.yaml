@@ -1,0 +1,4 @@
+# Sliding window memory backend — recency-based retrieval baseline
+# Inherits all settings from base_config.yaml
+memory_backend: sliding_window
+window_size: 5

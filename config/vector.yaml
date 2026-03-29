@@ -1,0 +1,4 @@
+# Vector memory backend — semantic similarity retrieval via ChromaDB
+# Inherits all settings from base_config.yaml
+memory_backend: vector
+min_similarity: 0.55   # Episodes below this cosine similarity are excluded from retrieval

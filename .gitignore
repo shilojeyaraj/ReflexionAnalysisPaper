@@ -1,0 +1,24 @@
+.env
+
+# pip editable install artifacts (human-eval cloned here by pip install -e git+...)
+src/
+
+# Python cache / build
+__pycache__/
+*.pyc
+*.egg-info/
+*.egg-info
+
+# experiment outputs
+results/
+figures/
+*.log
+
+# ChromaDB store
+chroma_store/
+
+# SQLite DB
+*.db
+
+# pytest
+.pytest_cache/

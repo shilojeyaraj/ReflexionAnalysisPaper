@@ -1,0 +1,15 @@
+# Base configuration — inherited by all backend-specific configs
+max_trials: 5
+max_tasks: 50
+reflection_k: 3
+min_similarity: 0.55        # Vector backend only: minimum cosine similarity for retrieval
+retrieval_scope: domain     # SQL backend only: 'domain' | 'global'
+embedding_model: "all-MiniLM-L6-v2"
+judge_model: "gpt-4o"
+log_level: "INFO"
+seed: 42
+
+# Tool-use domain: Berkeley Function Calling Leaderboard (BFCL)
+# Replaced ToolBench — no API key or live server required.
+# Category options: simple_python, multiple, parallel (see docs/BFCL_MIGRATION.md)
+bfcl_category: "simple_python"

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/test_environments.py::test_reasoning_env_step_no_answer tests/test_memory.py::test_vector_retrieve_semantic -v)",
+      "Bash(python -m pytest tests/test_environments.py::test_tool_env_correct_call -v)"
+    ]
+  }
+}

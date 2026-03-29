@@ -25,6 +25,7 @@ from agent.reflector import Reflector
 from environments.code_env import CodeEnvironment
 from environments.reasoning_env import ReasoningEnvironment
 from environments.tool_env import ToolEnvironment
+from analysis.report import report_from_file
 from evaluation.metrics import aggregate_metrics
 from evaluation.reflection_quality import score_reflections_batch
 from memory.sliding_window import SlidingWindowMemory
@@ -90,10 +91,18 @@ def run_domain(
     """Run the trial loop for all tasks in a domain."""
     effective_n = 3 if dry_run else n_tasks
     seed = config.get("seed", 42)
-    tasks = env.get_tasks(effective_n, seed=seed)
 
+    backend = config.get("memory_backend", "unknown")
+    _section(f"LOADING TASKS  [{domain.upper()}]")
+    print(f"  Fetching {effective_n} tasks (seed={seed})…")
+    tasks = env.get_tasks(effective_n, seed=seed)
+    print(f"  Loaded {len(tasks)} tasks  ✓")
+
+    _section(f"RUNNING TRIALS  [{backend.upper()} × {domain.upper()}]  {len(tasks)} tasks")
     results = []
-    for task in tqdm(tasks, desc=f"{domain} ({config.get('memory_backend', 'unknown')})"):
+    solved_so_far = 0
+    for i, task in enumerate(tasks, 1):
+        print(f"\n── Task {i}/{len(tasks)} ──────────────────────────────────────────────────────────")
         result = run_trial_loop(
             task=task,
             actor=actor,
@@ -103,6 +112,11 @@ def run_domain(
             config=config,
         )
         results.append(result)
+        if result["success"]:
+            solved_so_far += 1
+        running_pct = solved_so_far / i * 100
+        print(f"  Running score: {solved_so_far}/{i} solved ({running_pct:.1f}%)  |  "
+              f"total tokens so far: {sum(r['total_tokens'] for r in results):,}")
 
     return results
 
@@ -121,18 +135,30 @@ def setup_logging(log_level: str, log_path: str) -> None:
     )
 
 
+def _banner(text: str, char: str = "═", width: int = 72) -> None:
+    print("\n" + char * width)
+    pad = (width - len(text) - 2) // 2
+    print(char + " " * pad + text + " " * (width - pad - len(text) - 2) + char)
+    print(char * width)
+
+
+def _section(text: str, char: str = "─", width: int = 72) -> None:
+    side = (width - len(text) - 2) // 2
+    print("\n" + char * side + f" {text} " + char * (width - side - len(text) - 2))
+
+
 def print_summary(results: list[dict], backend: str, domain: str) -> None:
     """Print a summary table to stdout."""
     m = aggregate_metrics(results)
-    print(
-        f"\n{'='*60}\n"
-        f"  Backend: {backend}  |  Domain: {domain}\n"
-        f"  Tasks: {m['n_tasks']}  |  Solved: {m['n_solved']}\n"
-        f"  success@1: {m['success_at_1']:.3f}  |  success@5: {m['success_at_5']:.3f}\n"
-        f"  Mean tokens/task: {m['mean_tokens']:.0f}\n"
-        f"  Cost/solved task: ${m['cost_per_solved_usd']:.4f}\n"
-        f"{'='*60}"
-    )
+    _section(f"DOMAIN COMPLETE: {backend.upper()} × {domain.upper()}", "═")
+    solved_pct = m["n_solved"] / max(m["n_tasks"], 1) * 100
+    print(f"  Tasks run  : {m['n_tasks']}   Solved: {m['n_solved']} ({solved_pct:.1f}%)")
+    print(f"  success@1  : {m['success_at_1']:.3f}")
+    print(f"  success@3  : {m['success_at_3']:.3f}")
+    print(f"  success@5  : {m['success_at_5']:.3f}")
+    print(f"  Mean tokens: {m['mean_tokens']:.0f} / task")
+    print(f"  Cost/solved: ${m['cost_per_solved_usd']:.4f} USD")
+    print("═" * 72)
 
 
 def main() -> None:
@@ -198,6 +224,25 @@ def main() -> None:
 
     setup_logging(config.get("log_level", "INFO"), log_path)
     logger = logging.getLogger(__name__)
+
+    # ── Startup banner ──────────────────────────────────────────────────────
+    _banner("REFLEXION MEMORY BACKEND EXPERIMENT")
+    domains_to_run = DOMAINS if args.domain == "all" else [args.domain]
+    effective_n = 3 if args.dry_run else n_tasks
+    print(f"  Backend      : {args.backend}")
+    print(f"  Domain(s)    : {', '.join(domains_to_run)}")
+    print(f"  Tasks / domain: {effective_n}{'  (DRY RUN)' if args.dry_run else ''}")
+    print(f"  Max trials   : {config.get('max_trials', 5)}")
+    print(f"  Reflection k : {config.get('reflection_k', 3)}")
+    print(f"  Model        : {os.getenv('OPENAI_MODEL', 'gpt-4o')}")
+    print(f"  Output dir   : {output_dir.resolve()}")
+    print(f"  Log file     : {log_path}")
+    if args.score_reflections:
+        print(f"  Reflection scoring: ON (uses extra GPT-4o tokens)")
+    if args.seed_memory:
+        print(f"  Seed memory  : ON (20-task warm-up before main run)")
+    print("─" * 72)
+
     logger.info(
         "Starting experiment: backend=%s domain=%s n_tasks=%d dry_run=%s",
         args.backend, args.domain, n_tasks, args.dry_run,
@@ -205,6 +250,7 @@ def main() -> None:
 
     memory = make_memory(args.backend, config)
     domains_to_run = DOMAINS if args.domain == "all" else [args.domain]
+    print(f"  Memory backend initialised: {args.backend}")
 
     # Seed memory with warm-up run if requested
     if args.seed_memory:
@@ -225,8 +271,12 @@ def main() -> None:
         logger.info("Warm-up complete. Memory size: %d", memory.count())
 
     all_results: list[dict] = []
+    experiment_start = datetime.datetime.now()
 
-    for domain in domains_to_run:
+    for domain_idx, domain in enumerate(domains_to_run, 1):
+        domain_start = datetime.datetime.now()
+        _banner(f"DOMAIN {domain_idx}/{len(domains_to_run)}: {domain.upper()}")
+
         env = make_env(domain, config)
         actor = Actor(
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
@@ -240,6 +290,9 @@ def main() -> None:
         )
         all_results.extend(results)
 
+        domain_elapsed = (datetime.datetime.now() - domain_start).seconds
+        logger.info("Domain %s complete in %ds.", domain, domain_elapsed)
+
         # Save per-domain results immediately
         result_path = output_dir / f"{args.backend}_{domain}_{timestamp}.json"
         with open(result_path, "w", encoding="utf-8") as f:
@@ -247,6 +300,24 @@ def main() -> None:
         logger.info("Saved %d results to %s", len(results), result_path)
 
         print_summary(results, args.backend, domain)
+        print(f"  Elapsed: {domain_elapsed // 60}m {domain_elapsed % 60}s")
+        print(f"  Raw JSON: {result_path}")
+
+        # Generate human-readable reports automatically
+        _section("GENERATING REPORTS")
+        report_from_file(result_path, output_dir / "reports")
+
+    # Final summary across all domains
+    total_elapsed = (datetime.datetime.now() - experiment_start).seconds
+    _banner("EXPERIMENT COMPLETE")
+    print(f"  Total tasks   : {len(all_results)}")
+    print(f"  Total solved  : {sum(1 for r in all_results if r['success'])}")
+    print(f"  Total tokens  : {sum(r['total_tokens'] for r in all_results):,}")
+    print(f"  Total elapsed : {total_elapsed // 60}m {total_elapsed % 60}s")
+    print(f"  Results saved : {output_dir.resolve()}")
+    print(f"  Reports saved : {(output_dir / 'reports').resolve()}")
+    print(f"  Log file      : {log_path}")
+    print("═" * 72)
 
     # Score reflections if requested
     if args.score_reflections and not args.dry_run:

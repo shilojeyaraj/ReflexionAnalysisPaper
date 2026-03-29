@@ -1,13 +1,28 @@
 """
 Multi-step reasoning environment using HotpotQA (distractor set).
 
-Evaluates agent answers using exact match (reward=1.0) and substring
-match (reward=0.5) against the reference answer.
+Primary source: HuggingFace ``hotpot_qa`` / ``distractor`` validation split.
+
+Optional fixed corpus: set ``hotpot_qa_json_path`` in config (or env
+``HOTPOT_QA_JSON``) to a JSON file — useful for reproducible tests and
+paper artifacts without re-downloading the dataset. Env overrides config.
+
+JSON shape: either a list of records or ``{"examples": [...]}``. Each record
+should mirror HotpotQA fields used here: ``id`` (optional), ``question``,
+``answer``, and ``context`` with ``title`` and ``sentences`` (see
+``reflexiontesting.json`` for a minimal example).
 """
 
+from __future__ import annotations
+
+import json
+import os
 import re
 import random
 import logging
+from pathlib import Path
+from typing import Any
+
 from environments.base_env import BaseEnvironment
 
 logger = logging.getLogger(__name__)
@@ -54,22 +69,81 @@ def _extract_answer(response: str) -> str:
     return ""
 
 
+def _resolve_hotpot_json_path(config: dict | None) -> str | None:
+    """Path to local HotpotQA JSON if env or config specifies an existing file."""
+    path = os.getenv("HOTPOT_QA_JSON")
+    if not path and config:
+        path = config.get("hotpot_qa_json_path")
+    if not path:
+        return None
+    p = Path(path).expanduser()
+    if not p.is_file():
+        logger.warning(
+            "HotpotQA JSON path set but file not found (%s) — using HuggingFace.",
+            p,
+        )
+        return None
+    return str(p.resolve())
+
+
+def _load_hotpot_json_records(path: str) -> list[dict[str, Any]]:
+    """Load HotpotQA-shaped examples from JSON."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "examples" in data:
+        data = data["examples"]
+    if not isinstance(data, list):
+        raise ValueError(
+            f"HotpotQA JSON must be a list or {{'examples': [...]}}, got {type(data).__name__}"
+        )
+    if not data:
+        raise ValueError(f"HotpotQA JSON is empty: {path}")
+    return data
+
+
 class ReasoningEnvironment(BaseEnvironment):
     """
     HotpotQA multi-step reasoning environment.
 
-    Loads the validation split of HotpotQA (distractor configuration)
-    via HuggingFace datasets. No external server required.
+    Loads either a local JSON corpus (when configured) or the validation
+    split of HotpotQA (distractor) via HuggingFace datasets.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         self._dataset = None
+        self._json_path: str | None = _resolve_hotpot_json_path(config)
+        self._json_records: list[dict[str, Any]] | None = None
+
+    def _ensure_json_loaded(self) -> None:
+        if self._json_records is not None:
+            return
+        if not self._json_path:
+            return
+        self._json_records = _load_hotpot_json_records(self._json_path)
+        logger.info(
+            "Loaded HotpotQA from JSON (%d examples): %s",
+            len(self._json_records),
+            self._json_path,
+        )
 
     def _load_dataset(self) -> None:
-        """Lazy-load HotpotQA validation set."""
+        """Lazy-load HotpotQA validation set from HuggingFace."""
         from datasets import load_dataset
         self._dataset = load_dataset("hotpot_qa", "distractor", split="validation")
         logger.info("Loaded HotpotQA validation set (%d examples).", len(self._dataset))
+
+    def _item_to_task(self, item: dict[str, Any], fallback_id: str) -> dict:
+        context_text = _format_context(item)
+        description = (
+            f"Question: {item['question']}\n\nContext:\n{context_text}"
+        )
+        tid = item.get("id") or fallback_id
+        return {
+            "task_id": tid,
+            "description": description,
+            "context_passages": context_text,
+            "ground_truth": item["answer"],
+        }
 
     def get_tasks(self, n: int, seed: int) -> list[dict]:
         """
@@ -78,6 +152,20 @@ class ReasoningEnvironment(BaseEnvironment):
         Returns task dicts with keys:
             task_id, description (question + context), context_passages, ground_truth
         """
+        self._ensure_json_loaded()
+        if self._json_records is not None:
+            rng = random.Random(seed)
+            idx = list(range(len(self._json_records)))
+            rng.shuffle(idx)
+            take = min(n, len(idx))
+            tasks = []
+            for j in range(take):
+                item = self._json_records[idx[j]]
+                tasks.append(
+                    self._item_to_task(item, fallback_id=f"json_{idx[j]}")
+                )
+            return tasks
+
         if self._dataset is None:
             self._load_dataset()
 
@@ -86,16 +174,7 @@ class ReasoningEnvironment(BaseEnvironment):
 
         tasks = []
         for item in items:
-            context_text = _format_context(item)
-            description = (
-                f"Question: {item['question']}\n\nContext:\n{context_text}"
-            )
-            tasks.append({
-                "task_id": item["id"],
-                "description": description,
-                "context_passages": context_text,
-                "ground_truth": item["answer"],
-            })
+            tasks.append(self._item_to_task(item, fallback_id=str(item["id"])))
         return tasks
 
     def step(self, task: dict, response: str) -> tuple[float, bool, str, str]:

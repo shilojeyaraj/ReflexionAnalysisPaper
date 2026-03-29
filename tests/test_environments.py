@@ -10,6 +10,8 @@ import os
 import sys
 import tempfile
 import types
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -172,6 +174,56 @@ def test_reasoning_env_step_returns_4_tuple(reasoning_task):
     assert isinstance(success, bool)
     assert isinstance(feedback, str)
     assert isinstance(error_type, str)
+
+
+def test_reasoning_env_get_tasks_from_json_file(tmp_path):
+    """Local HotpotQA JSON supplies tasks without HuggingFace."""
+    sample = {
+        "id": "json_task_1",
+        "question": "What color is the sky in the sample?",
+        "answer": "blue",
+        "context": {
+            "title": ["Sample Doc"],
+            "sentences": [["In this sample document, the sky is described as blue."]],
+        },
+        "supporting_facts": {},
+    }
+    path = tmp_path / "mini_hotpot.json"
+    path.write_text(json.dumps({"examples": [sample]}), encoding="utf-8")
+
+    with patch("datasets.load_dataset") as load_dataset:
+        from environments.reasoning_env import ReasoningEnvironment
+
+        env = ReasoningEnvironment({"hotpot_qa_json_path": str(path)})
+        tasks = env.get_tasks(5, seed=99)
+        load_dataset.assert_not_called()
+
+    assert len(tasks) == 1
+    assert tasks[0]["task_id"] == "json_task_1"
+    assert tasks[0]["ground_truth"] == "blue"
+    assert "Question:" in tasks[0]["description"]
+    assert "Context:" in tasks[0]["description"]
+
+
+def test_reasoning_env_reflexiontesting_json_integration():
+    """Repo-root reflexiontesting.json is wired for reasoning experiments."""
+    root = Path(__file__).resolve().parent.parent
+    js = root / "reflexiontesting.json"
+    if not js.is_file():
+        pytest.skip("reflexiontesting.json not present at repo root")
+
+    with patch("datasets.load_dataset") as load_dataset:
+        from environments.reasoning_env import ReasoningEnvironment
+
+        env = ReasoningEnvironment({"hotpot_qa_json_path": str(js)})
+        tasks = env.get_tasks(10, seed=42)
+        load_dataset.assert_not_called()
+
+    assert len(tasks) == 2
+    ids = {t["task_id"] for t in tasks}
+    assert ids == {"hotpot_sample_1", "hotpot_sample_2"}
+    for t in tasks:
+        assert "description" in t and "ground_truth" in t
 
 
 # =============================================================================

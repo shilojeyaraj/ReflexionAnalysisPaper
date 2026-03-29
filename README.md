@@ -2,16 +2,17 @@
 
 ## Thesis
 
-This repository implements and evaluates the hypothesis that **persistent memory backends — specifically SQL (SQLite) and vector databases (ChromaDB) — improve the Reflexion agent learning process compared to the standard sliding-window episodic buffer baseline**. We test this hypothesis across three task domains: code generation (HumanEval), multi-step reasoning (HotpotQA), and tool-use (ToolBench G1). The central claim is that retrieval *strategy* — not just retrieval *availability* — determines whether past reflections improve agent performance. Structured retrieval (SQL) provides precision for tool-use tasks with nameable error types; semantic retrieval (vector DB) provides generalization for reasoning tasks with diverse surface forms; recency-based retrieval (sliding window) provides neither.
+This repository implements and evaluates the hypothesis that **persistent memory backends — specifically SQL (SQLite) and vector databases (ChromaDB) — improve the Reflexion agent learning process compared to the standard sliding-window episodic buffer baseline**. We test this hypothesis across three task domains: code generation (HumanEval), multi-step reasoning (HotpotQA), and tool-use (BFCL-style function calling via bundled `bfcl_lite`). The central claim is that retrieval *strategy* — not just retrieval *availability* — determines whether past reflections improve agent performance. Structured retrieval (SQL) provides precision for tool-use tasks with nameable error types; semantic retrieval (vector DB) provides generalization for reasoning tasks with diverse surface forms; recency-based retrieval (sliding window) provides neither.
 
 ---
 
 ## Prerequisites
 
 - Python 3.9+
-- OpenAI API key (`OPENAI_API_KEY`)
-- ToolBench API key (`TOOLBENCH_KEY`) — required for the tool-use domain only
+- OpenAI API key (`OPENAI_API_KEY`) for experiments (not required for offline `pytest`)
 - Git
+
+Documentation: **`docs/TESTING.md`** (test matrix, dry-run, CI) · **`docs/BFCL_MIGRATION.md`** (tool domain)
 
 ---
 
@@ -40,18 +41,11 @@ cp .env.example .env
 
 ---
 
-## Tool-Use Domain Setup (BFCL — no API key required)
+## Tool-Use Domain Setup (bundled `bfcl_lite` — no API key required)
 
-The tool-use domain uses the **Berkeley Function Calling Leaderboard** (BFCL).
-No API key, no server, and no separate data download are needed.
-
-```bash
-pip install bfcl-eval    # requires Python >= 3.10
-```
-
-All test cases and ground truth answers are bundled inside the package.
-The tool domain is ready immediately after install — it is the only domain
-with zero setup beyond `pip install`.
+The tool-use domain uses **BFCL-style** single-function tasks implemented in
+`environments/bfcl_lite.py` (deterministic AST evaluation). No API key, server,
+or extra package is required beyond `pip install -r requirements.txt` and `pip install -e .`.
 
 > **Why BFCL instead of ToolBench?** ToolBench required a live API key, a hosted
 > server, and an LLM judge (gpt-3.5-turbo), which introduced stochastic variance
@@ -77,7 +71,11 @@ python experiments/run_experiment.py --backend sliding_window --domain tool
 
 ### Full 9-condition suite (3 backends × 3 domains)
 ```bash
+# Linux / macOS / Git Bash
 bash experiments/run_all.sh
+
+# Windows PowerShell (repo root)
+pwsh -File experiments/run_all.ps1
 ```
 
 ### With warm-up memory pre-population (removes warm-up confound)
@@ -94,6 +92,19 @@ python experiments/run_experiment.py --backend sql --domain code --score-reflect
 ```bash
 python experiments/run_k_ablation.py --domain code --k-values 1,3,5,10
 ```
+
+---
+
+## Testing (CI + local)
+
+```bash
+pip install -r requirements.txt
+pip install -e .
+python -m pytest tests/ -v
+```
+
+See **`docs/TESTING.md`** for HumanEval notes, HotpotQA JSON (`reflexiontesting.json`),
+and pre-flight checklists. GitHub Actions runs the same pytest job (`.github/workflows/ci.yml`).
 
 ---
 
@@ -135,19 +146,27 @@ from analysis.summary_table import run_statistical_tests
 │   └── loop.py              # Trial loop orchestration
 ├── environments/
 │   ├── code_env.py          # HumanEval code generation
-│   ├── reasoning_env.py     # HotpotQA multi-step reasoning
-│   └── tool_env.py          # ToolBench G1 tool-use
+│   ├── reasoning_env.py     # HotpotQA (HF or local JSON via config)
+│   ├── tool_env.py          # BFCL-style tool-use (bfcl_lite)
+│   └── bfcl_lite.py         # Bundled tasks + AST evaluator
+├── docs/
+│   ├── TESTING.md           # How to run pytest, dry-run, CI
+│   └── BFCL_MIGRATION.md    # Tool domain rationale
 ├── evaluation/
 │   ├── metrics.py           # success@k, sample_efficiency, cost, pass@k
 │   └── reflection_quality.py # GPT-4o reflection quality judge
 ├── experiments/
 │   ├── run_experiment.py    # CLI for single conditions
 │   ├── run_k_ablation.py    # k-ablation script
-│   └── run_all.sh           # Full 9-condition sweep
+│   ├── run_all.sh           # Full 9-condition sweep (Unix)
+│   └── run_all.ps1          # Full 9-condition sweep (Windows)
 ├── analysis/
 │   ├── plots.py             # Publication figures
+│   ├── report.py            # Human-readable reports from result JSON
 │   └── summary_table.py     # LaTeX tables + Wilcoxon tests
-└── tests/                   # pytest test suite (no API calls required)
+├── tests/                   # pytest suite (no live API in unit tests)
+├── pytest.ini               # Pytest defaults
+└── reflexiontesting.json    # Optional HotpotQA-shaped corpus for reasoning
 ```
 
 ---
@@ -174,17 +193,17 @@ Embeds episodes as `"{domain}: {action_summary} -> {reflection}"` and retrieves 
 - **Setup**: requires manual uncommenting in `human_eval/execution.py`
 
 ### Reasoning (HotpotQA)
-- **Benchmark**: HotpotQA distractor configuration, validation split (~7400 questions)
+- **Benchmark**: HotpotQA distractor configuration, validation split (~7400 questions), or a local JSON file
 - **Evaluation**: Exact match (reward=1.0) and substring match (reward=0.5)
 - **Metric**: success@k (exact match required for success=True)
-- **Setup**: fully automatic via HuggingFace `datasets`
+- **Setup**: HuggingFace `datasets` by default; set `hotpot_qa_json_path` in `config/base_config.yaml` (default `./reflexiontesting.json`) or `HOTPOT_QA_JSON` to use a fixed corpus for reproducibility
 
-### Tool-use (BFCL simple_python)
-- **Benchmark**: Berkeley Function Calling Leaderboard — `simple_python` category
-- **Evaluation**: Deterministic AST matching against ground-truth function call specifications
+### Tool-use (BFCL-style / `bfcl_lite`)
+- **Benchmark**: Bundled single-function tasks (same error-typing story as BFCL)
+- **Evaluation**: Deterministic AST matching against ground-truth call specifications
 - **Metric**: success@k (AST check passes = success)
-- **Setup**: `pip install bfcl-eval` only — no API key, no server, no data download
-- **Error types**: `wrong_func_name`, `missing_required_param`, `wrong_arg_type`, `wrong_arg_value`, `no_function_call`
+- **Setup**: none beyond installing this repo — see `docs/BFCL_MIGRATION.md`
+- **Error types**: `wrong_func_name`, `missing_required_param`, `wrong_arg_type`, `wrong_arg_value`, `no_function_call`, etc.
 
 ---
 
@@ -233,10 +252,10 @@ The key conceptual frame for interpreting results: **signal density** is the fra
 ## Known Limitations
 
 1. **HumanEval safety**: `human_eval/execution.py` requires manual uncommenting before use. Run only in a sandboxed environment (Docker recommended).
-2. **BFCL requires Python >= 3.10**: `bfcl-eval` will not install on Python 3.9. If you are on 3.9, upgrade to 3.10+ or run the tool domain in a separate virtual environment.
-3. **Reflection scoring cost**: `--score-reflections` flag calls GPT-4o per reflection (each experiment run × max_trials × n_tasks calls).
+2. **Vector / sentence-transformers**: First run may download an embedding model; CI and headless servers need disk and RAM (see `docs/TESTING.md`).
+3. **Reflection scoring cost**: `--score-reflections` calls the judge model per reflection (extra tokens).
 4. **Warm-up phase**: The first ~20 tasks of any run are effectively a warm-up where all backends look similar. Use `--seed-memory` to control for this.
-5. **Tool-use evaluation**: LLM-as-judge (gpt-3.5-turbo) introduces stochastic variance in pass rate. Run each condition with the same seed for reproducibility.
+5. **Local HotpotQA JSON size**: The default `reflexiontesting.json` has only two examples — fine for smoke tests; use HuggingFace or expand the JSON for full-scale reasoning experiments.
 
 ---
 
@@ -256,8 +275,12 @@ python experiments/run_experiment.py --backend sliding_window --domain code --dr
 # 3. Full single condition
 python experiments/run_experiment.py --backend sql --domain code
 
-# 4. Full 9-condition suite (set TOOLBENCH_KEY first for tool domain)
+# 4. Full 9-condition suite
 bash experiments/run_all.sh
+# Windows: pwsh -File experiments/run_all.ps1
+
+# 4b. Unit tests (no API key)
+python -m pytest tests/ -v
 
 # 5. Generate all analysis plots
 python -c "from analysis.plots import plot_all; plot_all('./results', './figures')"

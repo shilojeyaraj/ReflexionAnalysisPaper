@@ -1,8 +1,90 @@
 # Testing Guide — Reflexion Memory Backend Study
 
+> **Maintainer entry point:** shorter, CI-focused instructions are in **[docs/TESTING.md](docs/TESTING.md)**. This file is an extended staged checklist with sample output.
+
 This document walks you through every test you can run, in order from
 "verify the install works" to "full 9-condition experiment sweep".
 Run each block in your terminal from the repo root.
+
+---
+
+## Confirmed baseline — Stage 0 unit tests (2026-03-28)
+
+Run `python -m pytest tests/ -v` for the current count (includes HotpotQA JSON tests). Example baseline: all tests passing on Python 3.13.2 / Windows 11.
+This is the reference baseline before any live experiment runs.
+
+```
+platform win32 -- Python 3.13.2, pytest-8.4.2, pluggy-1.6.0
+
+tests/test_agent.py::test_actor_act_returns_required_keys PASSED        [  2%]
+tests/test_agent.py::test_actor_act_with_memory PASSED                  [  5%]
+tests/test_agent.py::test_actor_act_empty_memory PASSED                 [  7%]
+tests/test_agent.py::test_reflector_reflect_returns_string PASSED       [ 10%]
+tests/test_agent.py::test_reflector_reflect_under_word_limit PASSED     [ 12%]
+tests/test_agent.py::test_trial_loop_success_on_first PASSED            [ 15%]
+tests/test_agent.py::test_trial_loop_failure_all_attempts PASSED        [ 17%]
+tests/test_agent.py::test_trial_loop_stores_episodes PASSED             [ 20%]
+tests/test_environments.py::test_code_env_get_tasks_keys PASSED         [ 22%]
+tests/test_environments.py::test_code_env_step_success PASSED           [ 25%]
+tests/test_environments.py::test_code_env_step_syntax_error PASSED      [ 27%]
+tests/test_environments.py::test_code_env_step_timeout PASSED           [ 30%]
+tests/test_environments.py::test_code_env_step_returns_4_tuple PASSED   [ 32%]
+tests/test_environments.py::test_reasoning_env_step_exact_match PASSED  [ 35%]
+tests/test_environments.py::test_reasoning_env_step_wrong_answer PASSED [ 37%]
+tests/test_environments.py::test_reasoning_env_step_partial_match PASSED[ 40%]
+tests/test_environments.py::test_reasoning_env_step_no_answer PASSED    [ 42%]
+tests/test_environments.py::test_reasoning_env_step_returns_4_tuple PASSED[ 45%]
+tests/test_environments.py::test_tool_env_correct_call PASSED           [ 47%]
+tests/test_environments.py::test_tool_env_wrong_function_name PASSED    [ 50%]
+tests/test_environments.py::test_tool_env_missing_required_param PASSED [ 52%]
+tests/test_environments.py::test_tool_env_no_function_call PASSED       [ 55%]
+tests/test_environments.py::test_tool_env_step_returns_4_tuple PASSED   [ 57%]
+tests/test_memory.py::test_sliding_window_store_count PASSED            [ 60%]
+tests/test_memory.py::test_sliding_window_retrieve_k PASSED             [ 62%]
+tests/test_memory.py::test_sliding_window_retrieve_empty PASSED         [ 65%]
+tests/test_memory.py::test_sliding_window_reverse_chronological PASSED  [ 67%]
+tests/test_memory.py::test_sliding_window_reset PASSED                  [ 70%]
+tests/test_memory.py::test_sliding_window_window_size PASSED            [ 72%]
+tests/test_memory.py::test_sql_store_count PASSED                       [ 75%]
+tests/test_memory.py::test_sql_retrieve_k PASSED                        [ 77%]
+tests/test_memory.py::test_sql_retrieve_empty PASSED                    [ 80%]
+tests/test_memory.py::test_sql_retrieve_by_error_type PASSED            [ 82%]
+tests/test_memory.py::test_sql_reset PASSED                             [ 85%]
+tests/test_memory.py::test_sql_success_rate PASSED                      [ 87%]
+tests/test_memory.py::test_sql_retrieve_domain_filter PASSED            [ 90%]
+tests/test_memory.py::test_vector_store_count PASSED                    [ 92%]
+tests/test_memory.py::test_vector_retrieve_empty PASSED                 [ 95%]
+tests/test_memory.py::test_vector_retrieve_semantic PASSED              [ 97%]
+tests/test_memory.py::test_vector_reset PASSED                          [100%]
+
+40 passed in 41.84s
+```
+
+### What each group confirms
+
+| Test group | What is verified |
+|---|---|
+| `test_agent.py` (8 tests) | Actor retrieves from memory and builds correct prompts; Reflector returns bounded non-empty strings; trial loop runs correct number of attempts and stores one episode per attempt |
+| `test_environments.py` — code (5 tests) | HumanEval problems load; code extraction from responses works; `check_correctness` results map to correct `error_type` (syntax_error, timeout, wrong_output, success) |
+| `test_environments.py` — reasoning (5 tests) | Exact match, partial match, wrong answer, and no-answer-extracted all score and classify correctly |
+| `test_environments.py` — tool (5 tests) | `bfcl_lite` parser handles correct calls, wrong function names, missing required params, and unparseable responses; all return 4-tuples of correct types |
+| `test_memory.py` — sliding window (6 tests) | Store/count/reset work; retrieval is reverse-chronological; window_size cap enforced |
+| `test_memory.py` — SQL (7 tests) | SQLite store/retrieve/reset; `retrieve_by_error_type` filters correctly; domain-scoped retrieval works |
+| `test_memory.py` — vector (4 tests) | ChromaDB store/count/reset; semantic retrieval ranks the closer episode first |
+
+### Install state at time of passing
+
+```
+Python        3.13.2
+openai        ✓
+chromadb      ✓
+datasets      ✓
+human_eval    ✓  (installed from src/human-eval with patched setup.py)
+bfcl_eval     ✗  (replaced by environments/bfcl_lite.py — zero dependencies)
+sentence-transformers ✓
+```
+
+---
 
 ---
 
@@ -35,15 +117,12 @@ python -c "import human_eval; print('human_eval OK')"
 
 ---
 
-### 3. Install bfcl-eval (tool domain only)
-Requires Python 3.10+ — you have 3.13, so this works fine.
+### 3. Tool domain (`bfcl_lite`, no extra package)
+The tool benchmark ships in `environments/bfcl_lite.py`. Verify after `pip install -e .`:
 ```bash
-pip install bfcl-eval
+python -c "from environments.tool_env import ToolEnvironment; ToolEnvironment({}); print('tool env OK')"
 ```
-Verify:
-```bash
-python -c "import bfcl_eval; print('bfcl_eval OK')"
-```
+Optional: `pip install bfcl-eval` only if you need upstream BFCL assets (not imported by this repo). See `docs/BFCL_MIGRATION.md`.
 
 ---
 
@@ -354,9 +433,10 @@ python -m json.tool results/<filename>.json | head -100
 pip install -e src/human-eval
 ```
 
-**`ModuleNotFoundError: No module named 'bfcl_eval'`**
+**`ModuleNotFoundError` for `environments` / `tool_env`**
 ```bash
-pip install bfcl-eval
+pip install -e .
+# Run from repository root so imports resolve
 ```
 
 **`OPENAI_API_KEY` not set / AuthenticationError**
@@ -364,8 +444,8 @@ pip install bfcl-eval
 - Or export it directly: `export OPENAI_API_KEY=sk-...`
 
 **HotpotQA dataset download hangs**
-- First run downloads ~100MB from HuggingFace — wait for it
-- Subsequent runs use the cached copy at `~/.cache/huggingface/datasets/`
+- Use local JSON: set `hotpot_qa_json_path` in `config/base_config.yaml` or `HOTPOT_QA_JSON` (see `reflexiontesting.json` and `docs/TESTING.md`)
+- Or first HF run downloads ~100MB — wait; cache lives under `~/.cache/huggingface/datasets/`
 
 **ChromaDB / sentence-transformers model download hangs**
 - First vector run downloads `all-MiniLM-L6-v2` (~90MB) — wait for it

@@ -1,0 +1,46 @@
+{
+  "examples": [
+    {
+      "id": "hotpot_sample_1",
+      "question": "What is the capital of the country where the Eiffel Tower is located?",
+      "answer": "Paris",
+      "context": {
+        "title": [
+          "Eiffel Tower",
+          "France"
+        ],
+        "sentences": [
+          [
+            "The Eiffel Tower is a landmark in Paris, France.",
+            "It was completed in 1889."
+          ],
+          [
+            "France is a country in Western Europe.",
+            "Its capital city is Paris."
+          ]
+        ]
+      },
+      "supporting_facts": {}
+    },
+    {
+      "id": "hotpot_sample_2",
+      "question": "Which author wrote both \"1984\" and \"Animal Farm\"?",
+      "answer": "George Orwell",
+      "context": {
+        "title": [
+          "1984 (novel)",
+          "Animal Farm"
+        ],
+        "sentences": [
+          [
+            "Nineteen Eighty-Four is a dystopian novel by English writer George Orwell."
+          ],
+          [
+            "Animal Farm is an allegorical novella by George Orwell, first published in 1945."
+          ]
+        ]
+      },
+      "supporting_facts": {}
+    }
+  ]
+}

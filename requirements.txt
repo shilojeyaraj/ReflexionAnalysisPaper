@@ -24,11 +24,7 @@ networkx>=3.0
 tqdm>=4.65.0
 requests>=2.28.0
 
-# Tool-use benchmark: Berkeley Function Calling Leaderboard
-# Replaces ToolBench — no API key or live server required.
-# Evaluation is deterministic AST-based (no judge LLM for tool domain).
-# Requires Python >= 3.10
-bfcl-eval>=0.0.1
+# Tool-use: bundled environments/bfcl_lite.py (BFCL-style tasks, AST eval). No extra package.
 
 # human-eval must be installed separately:
 # pip install -e git+https://github.com/openai/human-eval.git#egg=human-eval

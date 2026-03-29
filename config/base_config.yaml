@@ -9,6 +9,11 @@ judge_model: "gpt-4o"
 log_level: "INFO"
 seed: 42
 
+# Reasoning domain: optional local HotpotQA-shaped JSON (reproducible / offline).
+# If the file is missing, falls back to HuggingFace hotpot_qa distractor validation.
+# Override with env HOTPOT_QA_JSON (takes precedence over this path).
+hotpot_qa_json_path: "./reflexiontesting.json"
+
 # Tool-use domain: Berkeley Function Calling Leaderboard (BFCL)
 # Replaced ToolBench — no API key or live server required.
 # Category options: simple_python, multiple, parallel (see docs/BFCL_MIGRATION.md)

@@ -12,11 +12,9 @@ if [ -z "$OPENAI_API_KEY" ]; then
     exit 1
 fi
 
-# Tool domain uses BFCL (Berkeley Function Calling Leaderboard) — no API key needed.
-# Ensure bfcl-eval is installed (pip install bfcl-eval, requires Python >= 3.10)
-if ! python -c "import bfcl_eval" 2>/dev/null; then
-    echo "WARNING: bfcl-eval is not installed. Tool domain experiments will fail."
-    echo "Run: pip install bfcl-eval  (requires Python >= 3.10)"
+# Tool domain uses bundled bfcl_lite (deterministic AST) — no API key or bfcl-eval needed.
+if ! python -c "from environments.tool_env import ToolEnvironment; ToolEnvironment({})" 2>/dev/null; then
+    echo "WARNING: ToolEnvironment failed to import. Use repo root and: pip install -e ."
 fi
 
 START_TIME=$(date +%s)

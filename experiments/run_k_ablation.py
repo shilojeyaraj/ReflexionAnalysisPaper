@@ -72,7 +72,7 @@ def make_env(domain: str, config: dict):
     if domain == "code":
         return CodeEnvironment()
     elif domain == "reasoning":
-        return ReasoningEnvironment()
+        return ReasoningEnvironment(config)
     elif domain == "tool":
         return ToolEnvironment(config)
     raise ValueError(f"Unknown domain: {domain!r}")

@@ -1,10 +1,22 @@
 # Tool-Use Domain: Migration from ToolBench to BFCL
 
+## Runtime implementation: `bfcl_lite`
+
+The repository ships **`environments/bfcl_lite.py`** — a small, BFCL-compatible task set
+with deterministic `ast`-based checking. Tests and experiments use this by default so
+the project runs on **Python 3.9+** (including 3.13) without the **`bfcl-eval`** PyPI
+package (which pins dependencies that conflict with some Python versions).
+
+**Optional:** `pip install bfcl-eval` remains useful if you want to diff against upstream
+BFCL JSON assets locally; it is **not** imported by `environments/tool_env.py`.
+
+---
+
 ## Summary
 
 The tool-use domain benchmark was changed from **ToolBench** (OpenBMB/ToolBench)
-to the **Berkeley Function Calling Leaderboard** (BFCL, `bfcl-eval` package).
-This document records the full rationale, what changed, and what stayed the same.
+to a **Berkeley Function Calling Leaderboard**–style setup (conceptually BFCL;
+this document records the full rationale, what changed, and what stayed the same).
 
 ---
 
@@ -84,10 +96,10 @@ and should be tested and reported in the paper.
 |---|---|
 | `environments/tool_env.py` | Complete rewrite — BFCL instead of ToolBench |
 | `agent/actor.py` | Updated `TOOL_ACTOR_SYSTEM` prompt for Python function call syntax; removed OpenAI function-calling API path for tool domain; removed `_FINISH_FUNCTION` and `_build_function_schema` helpers |
-| `requirements.txt` | Added `bfcl-eval>=0.0.1`; removed `requests` dependency for ToolBench |
+| `requirements.txt` | No `bfcl-eval` hard requirement — bundled `bfcl_lite` covers tool domain |
 | `config/base_config.yaml` | Replaced `toolbench_api_url` / `toolbench_data_dir` with `bfcl_category` |
 | `.env.example` | Removed `TOOLBENCH_KEY`, `TOOLBENCH_API_URL`, `TOOLBENCH_DATA_DIR`; added `BFCL_CATEGORY` |
-| `experiments/run_all.sh` | Replaced ToolBench API reachability check with bfcl-eval import check |
+| `experiments/run_all.sh` | Replaced ToolBench check with `ToolEnvironment` import smoke test |
 | `tests/test_environments.py` | Replaced ToolBench test fixtures with BFCL mock-based tests |
 
 ### Files NOT changed
@@ -174,17 +186,20 @@ The k-ablation experiment can optionally test across categories.
 
 ---
 
-## Installation
+## Installation (this repo)
+
+No extra install for the tool domain: tasks and ground truth live in
+`environments/bfcl_lite.py`. Install the project as usual:
 
 ```bash
-pip install bfcl-eval    # Python >= 3.10 required
+pip install -r requirements.txt
+pip install -e .
 ```
 
-No additional data download needed. All test cases and ground truth answers
-are bundled inside the `bfcl_eval` package at:
-```
-bfcl_eval/data/BFCL_v4_simple_python.json          # test cases
-bfcl_eval/data/possible_answer/BFCL_v4_simple_python.json  # ground truth
+**Optional upstream package:**
+
+```bash
+pip install bfcl-eval    # Python >= 3.10; not required for this codebase
 ```
 
 ---

@@ -4,7 +4,7 @@ Task environments for the Reflexion memory study.
 Three domains:
 - CodeEnvironment: HumanEval code generation benchmark (164 problems, pass@k)
 - ReasoningEnvironment: HotpotQA multi-step reasoning (distractor set, exact/partial match)
-- ToolEnvironment: ToolBench G1 single-tool tasks (LLM-as-judge pass rate)
+- ToolEnvironment: BFCL-style function calling (bundled bfcl_lite, deterministic AST eval)
 """
 
 from environments.base_env import BaseEnvironment

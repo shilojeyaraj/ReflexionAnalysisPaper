@@ -175,23 +175,17 @@ def test_reasoning_env_step_returns_4_tuple(reasoning_task):
 
 
 # =============================================================================
-# ToolEnvironment (BFCL) tests
-# Uses bfcl-eval package — evaluation is deterministic AST-based, no API calls.
+# ToolEnvironment tests
+# Uses bfcl_lite — pure Python AST evaluation, no external packages needed.
+# No mocking required at all.
 # =============================================================================
 
 @pytest.fixture
 def bfcl_task():
-    """Minimal BFCL-style task dict for testing."""
+    """Minimal task dict matching the bfcl_lite schema."""
     return {
-        "task_id": "simple_python_0",
-        "description": (
-            "Task: Find the area of a triangle with base=10 and height=5.\n\n"
-            "Available functions:\n"
-            '{"name": "calculate_triangle_area", "description": "Calculate area", '
-            '"parameters": {"type": "dict", "properties": '
-            '{"base": {"type": "integer"}, "height": {"type": "integer"}}, '
-            '"required": ["base", "height"]}}'
-        ),
+        "task_id": "test_task_0",
+        "description": "Task: Find the area of a triangle with base=10 and height=5.",
         "functions": [
             {
                 "name": "calculate_triangle_area",
@@ -214,26 +208,11 @@ def bfcl_task():
 
 def test_tool_env_correct_call(bfcl_task):
     """Correct function call returns reward=1.0, success=True."""
-    from unittest.mock import patch, MagicMock
-    # Mock BFCL internals so tests run without bfcl-eval installed
-    mock_result = {"valid": True, "error": [], "error_type": ""}
-    mock_language = MagicMock()
-    mock_language.PYTHON = "python"
-    with patch("environments.tool_env._BFCL_AVAILABLE", True), \
-         patch("environments.tool_env.Language", mock_language), \
-         patch("environments.tool_env.ast_checker", return_value=mock_result), \
-         patch("environments.tool_env.default_decode_ast_prompting",
-               return_value=[{"calculate_triangle_area": {"base": 10, "height": 5}}]), \
-         patch("environments.tool_env._load_bfcl_data",
-               return_value=([], {})):
-        from environments.tool_env import ToolEnvironment
-        env = ToolEnvironment.__new__(ToolEnvironment)
-        env._category = "simple_python"
-        env._test_cases = []
-        env._gt_by_id = {}
-        reward, success, feedback, error_type = env.step(
-            bfcl_task, "calculate_triangle_area(base=10, height=5)"
-        )
+    from environments.tool_env import ToolEnvironment
+    env = ToolEnvironment()
+    reward, success, feedback, error_type = env.step(
+        bfcl_task, "calculate_triangle_area(base=10, height=5)"
+    )
     assert reward == 1.0
     assert success is True
     assert error_type == "success"
@@ -241,28 +220,11 @@ def test_tool_env_correct_call(bfcl_task):
 
 def test_tool_env_wrong_function_name(bfcl_task):
     """Wrong function name returns error_type='wrong_func_name'."""
-    from unittest.mock import patch, MagicMock
-    mock_result = {
-        "valid": False,
-        "error": ["Expected calculate_triangle_area, got get_area"],
-        "error_type": "simple_function_checker:wrong_func_name",
-    }
-    mock_language = MagicMock()
-    mock_language.PYTHON = "python"
-    with patch("environments.tool_env._BFCL_AVAILABLE", True), \
-         patch("environments.tool_env.Language", mock_language), \
-         patch("environments.tool_env.ast_checker", return_value=mock_result), \
-         patch("environments.tool_env.default_decode_ast_prompting",
-               return_value=[{"get_area": {"base": 10, "height": 5}}]), \
-         patch("environments.tool_env._load_bfcl_data", return_value=([], {})):
-        from environments.tool_env import ToolEnvironment
-        env = ToolEnvironment.__new__(ToolEnvironment)
-        env._category = "simple_python"
-        env._test_cases = []
-        env._gt_by_id = {}
-        reward, success, feedback, error_type = env.step(
-            bfcl_task, "get_area(base=10, height=5)"
-        )
+    from environments.tool_env import ToolEnvironment
+    env = ToolEnvironment()
+    reward, success, feedback, error_type = env.step(
+        bfcl_task, "get_area(base=10, height=5)"
+    )
     assert reward == 0.0
     assert success is False
     assert error_type == "wrong_func_name"
@@ -270,62 +232,31 @@ def test_tool_env_wrong_function_name(bfcl_task):
 
 def test_tool_env_missing_required_param(bfcl_task):
     """Missing required param returns error_type='missing_required_param'."""
-    from unittest.mock import patch, MagicMock
-    mock_result = {
-        "valid": False,
-        "error": ["Missing required parameter: height"],
-        "error_type": "simple_function_checker:missing_required",
-    }
-    mock_language = MagicMock()
-    mock_language.PYTHON = "python"
-    with patch("environments.tool_env._BFCL_AVAILABLE", True), \
-         patch("environments.tool_env.Language", mock_language), \
-         patch("environments.tool_env.ast_checker", return_value=mock_result), \
-         patch("environments.tool_env.default_decode_ast_prompting",
-               return_value=[{"calculate_triangle_area": {"base": 10}}]), \
-         patch("environments.tool_env._load_bfcl_data", return_value=([], {})):
-        from environments.tool_env import ToolEnvironment
-        env = ToolEnvironment.__new__(ToolEnvironment)
-        env._category = "simple_python"
-        env._test_cases = []
-        env._gt_by_id = {}
-        reward, success, feedback, error_type = env.step(
-            bfcl_task, "calculate_triangle_area(base=10)"
-        )
+    from environments.tool_env import ToolEnvironment
+    env = ToolEnvironment()
+    reward, success, feedback, error_type = env.step(
+        bfcl_task, "calculate_triangle_area(base=10)"
+    )
     assert error_type == "missing_required_param"
     assert reward == 0.0
 
 
 def test_tool_env_no_function_call(bfcl_task):
     """Unparseable response returns error_type='no_function_call'."""
-    from unittest.mock import patch
-    with patch("environments.tool_env._BFCL_AVAILABLE", True), \
-         patch("environments.tool_env.default_decode_ast_prompting", return_value=[]), \
-         patch("environments.tool_env._load_bfcl_data", return_value=([], {})):
-        from environments.tool_env import ToolEnvironment
-        env = ToolEnvironment.__new__(ToolEnvironment)
-        env._category = "simple_python"
-        env._test_cases = []
-        env._gt_by_id = {}
-        reward, success, feedback, error_type = env.step(
-            bfcl_task, "I don't know how to answer this."
-        )
+    from environments.tool_env import ToolEnvironment
+    env = ToolEnvironment()
+    reward, success, feedback, error_type = env.step(
+        bfcl_task, "I don't know how to answer this."
+    )
     assert reward == 0.0
     assert error_type == "no_function_call"
 
 
 def test_tool_env_step_returns_4_tuple(bfcl_task):
     """step() always returns a 4-tuple of (float, bool, str, str)."""
-    from unittest.mock import patch
-    with patch("environments.tool_env._BFCL_AVAILABLE", True), \
-         patch("environments.tool_env.default_decode_ast_prompting", return_value=[]), \
-         patch("environments.tool_env._load_bfcl_data", return_value=([], {})):
-        from environments.tool_env import ToolEnvironment
-        env = ToolEnvironment.__new__(ToolEnvironment)
-        env._category = "simple_python"
-        env._test_cases = []
-        env._gt_by_id = {}
-        result = env.step(bfcl_task, "some response")
+    from environments.tool_env import ToolEnvironment
+    env = ToolEnvironment()
+    result = env.step(bfcl_task, "some response")
     assert len(result) == 4
     reward, success, feedback, error_type = result
     assert isinstance(reward, float)

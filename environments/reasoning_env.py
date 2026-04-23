@@ -29,18 +29,30 @@ logger = logging.getLogger(__name__)
 
 
 def _format_context(item: dict) -> str:
-    """Format HotpotQA supporting facts into readable context paragraphs."""
-    lines = []
-    supporting_facts = item.get("supporting_facts", {})
+    """Format HotpotQA supporting facts into readable context paragraphs.
+
+    Handles two context shapes:
+    - HuggingFace dict:  {'title': [...], 'sentences': [[...], ...]}
+    - Raw JSON list:     [['title', ['sentence', ...]], ...]
+    """
     context = item.get("context", {})
+    lines = []
 
-    # context is {'title': [titles], 'sentences': [[sentences per doc]]}
-    titles = context.get("title", [])
-    sentences_per_doc = context.get("sentences", [])
-
-    for title, sentences in zip(titles, sentences_per_doc):
-        paragraph = " ".join(sentences)
-        lines.append(f"[{title}] {paragraph}")
+    if isinstance(context, list):
+        # Raw HotpotQA JSON: list of [title, [sentences]] pairs
+        for entry in context:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                title = entry[0]
+                sentences = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                paragraph = " ".join(str(s) for s in sentences)
+                lines.append(f"[{title}] {paragraph}")
+    else:
+        # HuggingFace dict format
+        titles = context.get("title", [])
+        sentences_per_doc = context.get("sentences", [])
+        for title, sentences in zip(titles, sentences_per_doc):
+            paragraph = " ".join(sentences)
+            lines.append(f"[{title}] {paragraph}")
 
     return "\n\n".join(lines)
 
@@ -137,7 +149,7 @@ class ReasoningEnvironment(BaseEnvironment):
         description = (
             f"Question: {item['question']}\n\nContext:\n{context_text}"
         )
-        tid = item.get("id") or fallback_id
+        tid = item.get("id") or item.get("_id") or fallback_id
         return {
             "task_id": tid,
             "description": description,

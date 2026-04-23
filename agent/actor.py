@@ -89,7 +89,7 @@ class Actor:
         self._model = model
         self._memory = memory
         self.domain = domain
-        self._client = OpenAI()
+        self._client = OpenAI(max_retries=8)
 
     def act(self, task: dict, attempt: int, k: int = 3) -> dict:
         """

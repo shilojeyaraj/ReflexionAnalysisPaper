@@ -44,7 +44,7 @@ class Reflector:
             model: OpenAI model to use for generating reflections.
         """
         self._model = model
-        self._client = OpenAI()
+        self._client = OpenAI(max_retries=8)
 
     def reflect(
         self,

@@ -115,7 +115,7 @@ class CodeEnvironment(BaseEnvironment):
             "canonical_solution": task.get("ground_truth", ""),
         }
 
-        result = check_correctness(problem, code, timeout=10.0)
+        result = check_correctness(problem, code, timeout=3.0)
         passed: bool = result.get("passed", False)
         result_str: str = result.get("result", "")
 

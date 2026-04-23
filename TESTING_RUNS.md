@@ -1,106 +1,81 @@
 # Manual Testing Runs — Reflexion Memory Backend Study
 
-Run every command below from the project root:
-```
+> **You are using PowerShell.** All commands below are written for PowerShell.
+
+First, open PowerShell and navigate to the project:
+```powershell
 cd "C:\Users\shilo\Rexlexion Analysis Paper\ReflexionAnalysisPaper"
 ```
+
+> **Note on code domain:** HumanEval is excluded. The execution harness uses `signal.SIGALRM` which does not exist on Windows, causing every attempt to hang. Reasoning and tool domains are unaffected and give a complete backend comparison for the paper.
 
 ---
 
 ## Before You Start
 
-1. Make sure your `.env` file has `OPENAI_API_KEY` set.
-2. Kill any background Python processes still running from the parallel attempts.
-3. The results of each run land in `./results/` as `{backend}_{domain}_{timestamp}.json`.
+1. Make sure `.env` has `OPENAI_API_KEY` set.
+2. Run **one command at a time** — parallel runs hit the OpenAI 30k TPM rate limit.
+3. Each result saves to `./results/` as `{backend}_{domain}_{timestamp}.json`.
 
 ---
 
-## Run Order
+## Reasoning Domain — HotpotQA
 
-Run **one at a time** to avoid hitting the OpenAI 30k TPM rate limit.
+### Run 1 — sliding_window × reasoning  *(~15–25 min)*
+```powershell
+$env:PYTHONIOENCODING="utf-8"; python experiments/run_experiment.py --backend sliding_window --domain reasoning --n-tasks 50
+```
 
----
+### Run 2 — sql × reasoning  *(~15–25 min)*
+```powershell
+$env:PYTHONIOENCODING="utf-8"; $env:SQLITE_DB_PATH="./db_sql_reasoning.db"; python experiments/run_experiment.py --backend sql --domain reasoning --n-tasks 50
+```
 
-### 1 — sliding_window × code
-```bash
-PYTHONIOENCODING=utf-8 python experiments/run_experiment.py --backend sliding_window --domain code --n-tasks 50
+### Run 3 — vector × reasoning  *(~15–25 min)*
+```powershell
+$env:PYTHONIOENCODING="utf-8"; $env:CHROMA_PERSIST_DIR="./chroma_reasoning"; python experiments/run_experiment.py --backend vector --domain reasoning --n-tasks 50
 ```
 
 ---
 
-### 2 — sliding_window × reasoning
-```bash
-PYTHONIOENCODING=utf-8 python experiments/run_experiment.py --backend sliding_window --domain reasoning --n-tasks 50
+## Tool Domain — BFCL (Function Calling)
+
+### Run 4 — sliding_window × tool  *(~10–20 min)*
+```powershell
+$env:PYTHONIOENCODING="utf-8"; python experiments/run_experiment.py --backend sliding_window --domain tool --n-tasks 50
+```
+
+### Run 5 — sql × tool  *(~10–20 min)*
+```powershell
+$env:PYTHONIOENCODING="utf-8"; $env:SQLITE_DB_PATH="./db_sql_tool.db"; python experiments/run_experiment.py --backend sql --domain tool --n-tasks 50
+```
+
+### Run 6 — vector × tool  *(~10–20 min)*
+```powershell
+$env:PYTHONIOENCODING="utf-8"; $env:CHROMA_PERSIST_DIR="./chroma_tool"; python experiments/run_experiment.py --backend vector --domain tool --n-tasks 50
 ```
 
 ---
 
-### 3 — sliding_window × tool
-```bash
-PYTHONIOENCODING=utf-8 python experiments/run_experiment.py --backend sliding_window --domain tool --n-tasks 50
-```
+## After All 6 Runs
+
+Come back to Claude and say **"all runs are done, generate the analysis"** — it will produce the comparison plots and summary table from the result JSONs.
 
 ---
 
-### 4 — sql × code
-```bash
-PYTHONIOENCODING=utf-8 SQLITE_DB_PATH=./db_sql_code.db python experiments/run_experiment.py --backend sql --domain code --n-tasks 50
-```
+## What to Expect
+
+- Terminal prints each task attempt live with reward, error type, and tokens used
+- Successful tasks finish on attempt 1; harder ones iterate up to 5 times
+- Summary table prints at end of each run: `success@1`, `success@3`, `success@5`, tokens, cost
+- If a run crashes, just re-run the same command — it creates a new timestamped file
 
 ---
 
-### 5 — sql × reasoning
-```bash
-PYTHONIOENCODING=utf-8 SQLITE_DB_PATH=./db_sql_reasoning.db python experiments/run_experiment.py --backend sql --domain reasoning --n-tasks 50
-```
+## Estimated Time
 
----
-
-### 6 — sql × tool
-```bash
-PYTHONIOENCODING=utf-8 SQLITE_DB_PATH=./db_sql_tool.db python experiments/run_experiment.py --backend sql --domain tool --n-tasks 50
-```
-
----
-
-### 7 — vector × code
-```bash
-PYTHONIOENCODING=utf-8 CHROMA_PERSIST_DIR=./chroma_code python experiments/run_experiment.py --backend vector --domain code --n-tasks 50
-```
-
----
-
-### 8 — vector × reasoning
-```bash
-PYTHONIOENCODING=utf-8 CHROMA_PERSIST_DIR=./chroma_reasoning python experiments/run_experiment.py --backend vector --domain reasoning --n-tasks 50
-```
-
----
-
-### 9 — vector × tool
-```bash
-PYTHONIOENCODING=utf-8 CHROMA_PERSIST_DIR=./chroma_tool python experiments/run_experiment.py --backend vector --domain tool --n-tasks 50
-```
-
----
-
-## After All 9 Runs — Generate Analysis
-
-Once all 9 result JSONs are in `./results/`, run this to generate plots and the summary table:
-
-```bash
-PYTHONIOENCODING=utf-8 python analysis/plots.py
-PYTHONIOENCODING=utf-8 python analysis/summary_table.py
-```
-
-Or tell Claude "all 9 runs are done, generate the analysis" and it will do it for you.
-
----
-
-## Notes
-
-- Each run takes **15–45 minutes** depending on how often GPT-4o hits rate limits (it retries automatically).
-- SQL runs each use a **separate `.db` file** so they don't share state — this is intentional.
-- Vector runs each use a **separate `./chroma_*` folder** for the same reason.
-- Results already collected (small pilots from 2026-03-30) are in `./results/` but only had 2 tasks each — these full 50-task runs supersede them.
-- If a run crashes midway, just re-run the same command — it will overwrite with a new timestamped file.
+| | Per run | 3 runs |
+|--|---------|--------|
+| Reasoning | 15–25 min | ~60–75 min |
+| Tool | 10–20 min | ~45–60 min |
+| **Total** | | **~2 hours** |

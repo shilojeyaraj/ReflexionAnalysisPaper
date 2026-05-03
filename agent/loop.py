@@ -1,7 +1,7 @@
 """
 Trial loop orchestration for the Reflexion memory study.
 
-Runs the full actor → environment → reflector → memory store loop
+Runs the full actor ->environment ->reflector ->memory store loop
 for a single task, up to max_trials attempts.
 """
 
@@ -17,21 +17,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_REWARD_ICONS = {1.0: "✓", 0.5: "~", 0.0: "✗"}
+_REWARD_ICONS = {1.0: "[OK]", 0.5: "[~]", 0.0: "[X]"}
 
 def _reward_icon(reward: float) -> str:
-    if reward == 1.0: return "✓"
-    if reward > 0:    return "~"
-    return "✗"
+    if reward == 1.0: return "[OK]"
+    if reward > 0:    return "[~]"
+    return "[X]"
 
 def _reward_bar(reward: float, width: int = 12) -> str:
     filled = round(reward * width)
-    return "█" * filled + "░" * (width - filled)
+    return "#" * filled + "." * (width - filled)
 
-def _print_divider(char: str = "─", width: int = 72) -> None:
+def _print_divider(char: str = "-", width: int = 72) -> None:
     print(char * width)
 
-def _print_section(label: str, char: str = "─", width: int = 72) -> None:
+def _print_section(label: str, char: str = "-", width: int = 72) -> None:
     side = (width - len(label) - 2) // 2
     print(char * side + f" {label} " + char * (width - side - len(label) - 2))
 
@@ -49,7 +49,7 @@ def run_trial_loop(
 
     Each attempt:
     1. Actor generates a response using retrieved past reflections
-    2. Environment evaluates the response → (reward, success, feedback, error_type)
+    2. Environment evaluates the response ->(reward, success, feedback, error_type)
     3. Reflector generates lessons learned from the attempt
     4. Episode stored in memory for future retrieval
     5. Break on success
@@ -89,19 +89,22 @@ def run_trial_loop(
     total_tokens: int = 0
     final_reward: float = 0.0
     success: bool = False
+    prev_error_type: str | None = None  # passed to actor on attempt 1+ for SQL error-type retrieval
 
-    _print_section(f"TASK  {task['task_id']}  [{actor.domain.upper()} | {backend_name}]", "═")
+    _print_section(f"TASK  {task['task_id']}  [{actor.domain.upper()} | {backend_name}]", "=")
     desc_preview = task.get("description", "")[:200].replace("\n", " ")
-    print(f"  {desc_preview}{'…' if len(task.get('description','')) > 200 else ''}")
+    print(f"  {desc_preview}{'...' if len(task.get('description','')) > 200 else ''}")
     print(f"  Max attempts: {max_trials}  |  Memory size: {memory.count()} episodes stored")
     print()
 
     for attempt in range(max_trials):
-        _print_section(f"Attempt {attempt + 1} / {max_trials}", "─")
+        _print_section(f"Attempt {attempt + 1} / {max_trials}", "-")
 
-        # 1. Actor retrieves from memory and generates response
-        print(f"  [1/4] Retrieving top-{reflection_k} lessons from memory ({memory.count()} stored)…")
-        act_result = actor.act(task, attempt, k=reflection_k)
+        # 1. Actor retrieves from memory and generates response.
+        # Pass prev_error_type so SQL backend can use retrieve_by_error_type()
+        # on attempt 1+ — surfaces targeted lessons for the specific failure mode.
+        print(f"  [1/4] Retrieving top-{reflection_k} lessons from memory ({memory.count()} stored)...")
+        act_result = actor.act(task, attempt, k=reflection_k, prev_error_type=prev_error_type)
         retrieved = act_result.get("retrieved_reflections", [])
         total_tokens += act_result["total_tokens"]
 
@@ -114,11 +117,11 @@ def run_trial_loop(
             print(f"        No past lessons retrieved (memory empty or below similarity threshold)")
 
         # 2. Environment evaluates response
-        print(f"  [2/4] Calling LLM ({act_result['total_tokens']} tokens used)…")
-        response_preview = act_result["response_text"][:300].replace("\n", "↵")
-        print(f"        Response: {response_preview}{'…' if len(act_result['response_text']) > 300 else ''}")
+        print(f"  [2/4] Calling LLM ({act_result['total_tokens']} tokens used)...")
+        response_preview = act_result["response_text"][:300].replace("\n", " | ")
+        print(f"        Response: {response_preview}{'...' if len(act_result['response_text']) > 300 else ''}")
 
-        print(f"  [3/4] Evaluating with environment…")
+        print(f"  [3/4] Evaluating with environment...")
         reward, success, feedback, error_type = env.step(task, act_result["response_text"])
         final_reward = reward
         per_attempt_rewards.append(reward)
@@ -132,7 +135,7 @@ def run_trial_loop(
         bar  = _reward_bar(reward)
         print(f"        {icon} Reward: {bar} {reward:.2f}  |  error_type: {error_type}")
         fb_preview = feedback[:200].replace("\n", " ")
-        print(f"        Feedback: {fb_preview}{'…' if len(feedback) > 200 else ''}")
+        print(f"        Feedback: {fb_preview}{'...' if len(feedback) > 200 else ''}")
 
         logger.info(
             "Task %s | attempt %d/%d | reward=%.2f | error_type=%s | tokens=%d",
@@ -141,13 +144,13 @@ def run_trial_loop(
         )
 
         # 3. Generate reflection
-        print(f"  [4/4] Generating reflection…")
+        print(f"  [4/4] Generating reflection...")
         reflection = reflector.reflect(
             task, act_result["response_text"], reward, feedback
         )
         reflections.append(reflection)
         refl_preview = reflection[:200].replace("\n", " ")
-        print(f"        ✎ {refl_preview}{'…' if len(reflection) > 200 else ''}")
+        print(f"        >> {refl_preview}{'...' if len(reflection) > 200 else ''}")
 
         # 4. Store episode
         episode = {
@@ -163,19 +166,22 @@ def run_trial_loop(
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
         memory.store(episode)
-        print(f"        Stored episode → memory now has {memory.count()} episode(s)")
+        print(f"        Stored episode ->memory now has {memory.count()} episode(s)")
+
+        # Track error type so next attempt can use targeted retrieval
+        prev_error_type = error_type
 
         # 5. Break on success
         if success:
             print()
-            print(f"  ✓ SOLVED on attempt {attempt + 1}  (tokens this task: {total_tokens})")
+            print(f"  [SOLVED] on attempt {attempt + 1}  (tokens this task: {total_tokens})")
             logger.info("Task %s solved on attempt %d.", task["task_id"], attempt + 1)
             break
         else:
             print()
 
     if not success:
-        print(f"  ✗ FAILED after {max_trials} attempts  (tokens this task: {total_tokens})")
+        print(f"  [FAILED] after {max_trials} attempts  (tokens this task: {total_tokens})")
 
     return {
         "task_id": task["task_id"],

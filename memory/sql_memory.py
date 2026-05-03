@@ -93,8 +93,15 @@ class SQLMemory(MemoryBackend):
         """
         Retrieve up to k episodes, filtered by domain if retrieval_scope='domain'.
 
-        Results are ordered by success DESC, reward DESC, timestamp DESC,
-        surfacing the most successful and recent relevant episodes first.
+        Results are ordered by success ASC, timestamp DESC — failures first, most
+        recent first within each group. This surfaces the agent's own failure
+        reflections before its successes, which is the correct ordering for
+        Reflexion: the agent already knows how to succeed when it succeeds; what it
+        needs at retry time are the lessons extracted from past failures.
+
+        (Prior ordering was success DESC which buried failures and caused SQL to
+        underperform sliding window in the v1 experiment — see audit findings.)
+
         Logs a warning if fewer than k episodes are available.
         """
         if self._retrieval_scope == "domain":
@@ -102,7 +109,7 @@ class SQLMemory(MemoryBackend):
                 """
                 SELECT * FROM episodes
                 WHERE domain = ?
-                ORDER BY success DESC, reward DESC, timestamp DESC
+                ORDER BY success ASC, timestamp DESC
                 LIMIT ?
                 """,
                 (query["domain"], k),
@@ -111,7 +118,7 @@ class SQLMemory(MemoryBackend):
             cursor = self._conn.execute(
                 """
                 SELECT * FROM episodes
-                ORDER BY success DESC, reward DESC, timestamp DESC
+                ORDER BY success ASC, timestamp DESC
                 LIMIT ?
                 """,
                 (k,),

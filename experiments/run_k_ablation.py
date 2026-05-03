@@ -20,6 +20,13 @@ import os
 import sys
 from pathlib import Path
 
+# Force UTF-8 stdout/stderr on Windows to handle non-ASCII content in
+# HotpotQA passages (multilingual proper nouns, diacritics, etc.)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import yaml
 from dotenv import load_dotenv
 from tqdm import tqdm

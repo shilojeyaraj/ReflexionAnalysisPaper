@@ -1,0 +1,17 @@
+STATISTICAL TESTS — Wilcoxon Signed-Rank (success@5)
+============================================================
+
+Domain: Reasoning (HotpotQA)
+----------------------------------------
+  Sliding Window (86.0%) vs SQL v1 (success-first, buggy) (72.0%):  n=50, W=5.00, p=0.0196  * SIGNIFICANT *
+  Sliding Window (86.0%) vs SQL v2 (failure-first, fixed) (84.0%):  n=50, W=0.00, p=0.3173  n.s.
+  Sliding Window (86.0%) vs Vector DB (Chroma) (84.0%):  n=50, W=0.00, p=0.3173  n.s.
+  SQL v1 (success-first, buggy) (72.0%) vs SQL v2 (failure-first, fixed) (84.0%):  n=50, W=11.00, p=0.0578  n.s.
+  SQL v1 (success-first, buggy) (72.0%) vs Vector DB (Chroma) (84.0%):  n=50, W=4.50, p=0.0339  * SIGNIFICANT *
+  SQL v2 (failure-first, fixed) (84.0%) vs Vector DB (Chroma) (84.0%):  n=50, W=1.50, p=1.0000  n.s.
+
+Domain: Tool-Use (BFCL)
+----------------------------------------
+  Sliding Window (100.0%) vs SQL v2 (failure-first, fixed) (100.0%):  n=40, W=0.00, p=nan  n.s.
+  Sliding Window (100.0%) vs Vector DB (Chroma) (100.0%):  n=40, W=0.00, p=nan  n.s.
+  SQL v2 (failure-first, fixed) (100.0%) vs Vector DB (Chroma) (100.0%):  n=40, W=0.00, p=nan  n.s.

@@ -91,7 +91,8 @@ class Actor:
         self.domain = domain
         self._client = OpenAI(max_retries=8)
 
-    def act(self, task: dict, attempt: int, k: int = 3) -> dict:
+    def act(self, task: dict, attempt: int, k: int = 3,
+            prev_error_type: str | None = None) -> dict:
         """
         Generate a response to the task, informed by retrieved past reflections.
 
@@ -100,6 +101,10 @@ class Actor:
                   Tool tasks also have 'api_list'. Reasoning tasks may have 'context_passages'.
             attempt: Zero-indexed attempt number.
             k: Number of past reflections to retrieve from memory.
+            prev_error_type: Error type from the previous attempt (None on attempt 0).
+                             When provided and the memory backend supports structured
+                             retrieval (SQLMemory), retrieves by error type first so
+                             the agent sees targeted lessons for its specific failure mode.
 
         Returns:
             dict with keys:
@@ -114,7 +119,28 @@ class Actor:
             "domain": self.domain,
             "current_task_description": task["description"],
         }
-        retrieved = self._memory.retrieve(query, k)
+
+        # Use error-type-specific retrieval if available and we have a prior error.
+        # This is SQL's structural advantage over the other backends: rather than
+        # retrieving the k most recent/similar episodes, it retrieves episodes that
+        # share the exact failure mode, producing more targeted lessons.
+        if prev_error_type and hasattr(self._memory, "retrieve_by_error_type"):
+            retrieved = self._memory.retrieve_by_error_type(prev_error_type, k)
+            if len(retrieved) < k:
+                # Pad with general domain retrieval if not enough error-type matches
+                extra = self._memory.retrieve(query, k - len(retrieved))
+                seen_ids = {ep.get("id") for ep in retrieved}
+                retrieved += [ep for ep in extra if ep.get("id") not in seen_ids]
+            logger.debug(
+                "Actor.act: task=%s attempt=%d error_type_retrieval=%s retrieved=%d/%d",
+                task["task_id"], attempt, prev_error_type, len(retrieved), k,
+            )
+        else:
+            retrieved = self._memory.retrieve(query, k)
+            logger.debug(
+                "Actor.act: task=%s attempt=%d retrieved=%d/%d reflections",
+                task["task_id"], attempt, len(retrieved), k,
+            )
         logger.debug(
             "Actor.act: task=%s attempt=%d retrieved=%d/%d reflections",
             task["task_id"], attempt, len(retrieved), k,

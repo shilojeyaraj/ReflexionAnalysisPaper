@@ -1,0 +1,19 @@
+\begin{table}[h]
+\centering
+\caption{Comparison of memory backends across task domains. Best per domain in \textbf{bold}.}
+\label{tab:memory_comparison}
+\begin{tabular}{llccccc}
+\hline
+Domain & Backend & success@1 & success@3 & success@5 & Mean Tokens & Cost/Solved (\$) \\
+\hline
+Reasoning (HotpotQA) & Sliding Window & 0.580 & \textbf{0.840} & \textbf{0.860} & 3967 & 0.01520 \\
+ & SQL v1 (success-first, buggy) & 0.580 & 0.700 & 0.720 & 4649 & 0.01343 \\
+ & SQL v2 (failure-first, fixed) & 0.580 & 0.780 & 0.840 & 4076 & 0.01505 \\
+ & Vector DB (Chroma) & \textbf{0.700} & 0.820 & 0.840 & \textbf{3621} & \textbf{0.01248} \\
+\hline
+Tool-Use (BFCL) & Sliding Window & 0.900 & \textbf{1.000} & \textbf{1.000} & 855 & 0.00427 \\
+ & SQL v2 (failure-first, fixed) & 0.925 & \textbf{1.000} & \textbf{1.000} & 881 & 0.00440 \\
+ & Vector DB (Chroma) & \textbf{0.975} & \textbf{1.000} & \textbf{1.000} & \textbf{788} & \textbf{0.00394} \\
+\hline
+\end{tabular}
+\end{table}

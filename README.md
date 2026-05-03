@@ -1,132 +1,35 @@
-# Reflexion Memory Backends: A Comparative Study
+# Memory Retrieval Strategy Matters: A Comparative Study of Episodic Memory Backends for Reflexion-Style LLM Agents
+
+**Shilo Jeyaraj** — University of Waterloo
+
+---
 
 ## Thesis
 
-This repository implements and evaluates the hypothesis that **persistent memory backends — specifically SQL (SQLite) and vector databases (ChromaDB) — improve the Reflexion agent learning process compared to the standard sliding-window episodic buffer baseline**. We test this hypothesis across three task domains: code generation (HumanEval), multi-step reasoning (HotpotQA), and tool-use (BFCL-style function calling via bundled `bfcl_lite`). The central claim is that retrieval *strategy* — not just retrieval *availability* — determines whether past reflections improve agent performance. Structured retrieval (SQL) provides precision for tool-use tasks with nameable error types; semantic retrieval (vector DB) provides generalization for reasoning tasks with diverse surface forms; recency-based retrieval (sliding window) provides neither.
+This repository tests the hypothesis that **retrieval strategy — not just retrieval availability — determines whether episodic memory improves Reflexion-style agent learning**. We compare three backends across two task domains: multi-step reasoning (HotpotQA) and tool-use (BFCL function calling).
+
+The central claim: a sliding window that always returns the most recent episodes is often the *worst* choice, because recency does not predict relevance. Structured SQL retrieval (filtered by domain and error type) and semantic vector retrieval (cosine similarity over embedded reflections) both outperform the recency baseline — but for different reasons and on different task types.
 
 ---
 
-## Prerequisites
+## Key Findings
 
-- Python 3.9+
-- OpenAI API key (`OPENAI_API_KEY`) for experiments (not required for offline `pytest`)
-- Git
+| Backend | HotpotQA success@5 | BFCL success@5 |
+|---------|-------------------|----------------|
+| Sliding Window | **86%** | 100% |
+| SQL (v1 — buggy ordering) | 72% | 100% |
+| **SQL (v2 — fixed)** | **84%** | **100%** |
+| Vector DB | **84%** | 100% |
 
-Documentation: **`docs/TESTING.md`** (test matrix, dry-run, CI) · **`docs/BFCL_MIGRATION.md`** (tool domain)
+**SQL ordering ablation (main result):** The original SQL retrieval ranked past episodes by `success DESC` — surfacing successes when the agent was failing. Changing to `success ASC` (failure-first) raised SQL success@5 from **72% → 84%** on reasoning. This is a 12 percentage-point gain from a single-line change, isolating retrieval ordering as a first-order variable.
 
----
+**Tool ceiling:** All backends reach 100% success@5 on BFCL. The tasks are sufficiently structured that any memory is as good as any other; tool-use differences would require harder multi-step tasks.
 
-## Installation
-
-```bash
-git clone <this-repo>
-cd ReflexionAnalysisPaper
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install the human-eval harness (required for code domain)
-pip install -e git+https://github.com/openai/human-eval.git#egg=human-eval
-
-# IMPORTANT: After installing human-eval, open the file and uncomment the execution call:
-# find the line in human_eval/execution.py that says it must be uncommented manually
-# This is a safety measure — the harness runs untrusted LLM-generated code.
-
-# Install this package in editable mode
-pip install -e .
-
-# Copy environment template and fill in your keys
-cp .env.example .env
-```
-
----
-
-## Tool-Use Domain Setup (bundled `bfcl_lite` — no API key required)
-
-The tool-use domain uses **BFCL-style** single-function tasks implemented in
-`environments/bfcl_lite.py` (deterministic AST evaluation). No API key, server,
-or extra package is required beyond `pip install -r requirements.txt` and `pip install -e .`.
-
-> **Why BFCL instead of ToolBench?** ToolBench required a live API key, a hosted
-> server, and an LLM judge (gpt-3.5-turbo), which introduced stochastic variance
-> into pass rate evaluation. BFCL uses deterministic AST-based evaluation — the
-> same response always scores the same. This is essential for a clean comparison
-> of memory backends. See `docs/BFCL_MIGRATION.md` for the full rationale.
-
----
-
-## Running Experiments
-
-### Single condition (dry run — 3 tasks, fast)
-```bash
-python experiments/run_experiment.py --backend sql --domain code --dry-run
-```
-
-### Single condition (full)
-```bash
-python experiments/run_experiment.py --backend sql --domain code
-python experiments/run_experiment.py --backend vector --domain reasoning
-python experiments/run_experiment.py --backend sliding_window --domain tool
-```
-
-### Full 9-condition suite (3 backends × 3 domains)
-```bash
-# Linux / macOS / Git Bash
-bash experiments/run_all.sh
-
-# Windows PowerShell (repo root)
-pwsh -File experiments/run_all.ps1
-```
-
-### With warm-up memory pre-population (removes warm-up confound)
-```bash
-python experiments/run_experiment.py --backend sql --domain code --seed-memory
-```
-
-### With reflection quality scoring (uses additional GPT-4o tokens)
-```bash
-python experiments/run_experiment.py --backend sql --domain code --score-reflections
-```
-
-### k-ablation experiment
-```bash
-python experiments/run_k_ablation.py --domain code --k-values 1,3,5,10
-```
-
----
-
-## Testing (CI + local)
-
-```bash
-pip install -r requirements.txt
-pip install -e .
-python -m pytest tests/ -v
-```
-
-See **`docs/TESTING.md`** for HumanEval notes, HotpotQA JSON (`reflexiontesting.json`),
-and pre-flight checklists. GitHub Actions runs the same pytest job (`.github/workflows/ci.yml`).
-
----
-
-## Analysis
-
-```bash
-# Generate all figures
-python -c "from analysis.plots import plot_all; plot_all('./results', './figures')"
-
-# Print LaTeX table
-python -c "
-from analysis.summary_table import build_summary_table, print_latex_table
-df = build_summary_table('./results')
-print_latex_table(df)
-"
-
-# Run statistical tests
-python -c "
-from analysis.summary_table import run_statistical_tests
-# load results_by_condition dict first
-"
-```
+**Statistical tests (Wilcoxon signed-rank, per-task binary):**
+- SW vs SQL-v1: p = 0.020 (significant)
+- SQL-v1 vs Vector: p = 0.034 (significant)
+- SW vs SQL-v2: p = 0.317 (not significant — fixed SQL is comparable to SW)
+- SQL-v2 vs Vector: p = 1.000 (not significant — both converge to the same strategy)
 
 ---
 
@@ -134,39 +37,157 @@ from analysis.summary_table import run_statistical_tests
 
 ```
 .
-├── config/                  # YAML configs per backend + base config
+├── config/                  # YAML configs per backend + shared base
+│   ├── base_config.yaml
+│   ├── sliding_window.yaml
+│   ├── sql.yaml
+│   └── vector.yaml
 ├── memory/                  # Memory backend implementations
-│   ├── base.py              # Abstract MemoryBackend interface
+│   ├── base.py              # Abstract MemoryBackend + signal-to-noise framework
 │   ├── sliding_window.py    # Recency-based baseline
-│   ├── sql_memory.py        # SQLite structured retrieval
-│   └── vector_memory.py     # ChromaDB semantic retrieval
+│   ├── sql_memory.py        # SQLite structured retrieval (failure-first ordering)
+│   └── vector_memory.py     # ChromaDB + all-MiniLM-L6-v2 semantic retrieval
 ├── agent/
-│   ├── actor.py             # Generates responses using memory
-│   ├── reflector.py         # Generates lessons from attempts
-│   └── loop.py              # Trial loop orchestration
+│   ├── actor.py             # Generates responses; retrieves from memory
+│   ├── reflector.py         # Generates lessons learned from each attempt
+│   └── loop.py              # Trial loop: actor → env → reflector → memory store
 ├── environments/
-│   ├── code_env.py          # HumanEval code generation
-│   ├── reasoning_env.py     # HotpotQA (HF or local JSON via config)
-│   ├── tool_env.py          # BFCL-style tool-use (bfcl_lite)
-│   └── bfcl_lite.py         # Bundled tasks + AST evaluator
-├── docs/
-│   ├── TESTING.md           # How to run pytest, dry-run, CI
-│   └── BFCL_MIGRATION.md    # Tool domain rationale
+│   ├── base_env.py          # Abstract BaseEnvironment
+│   ├── code_env.py          # HumanEval (requires manual harness setup — see below)
+│   ├── reasoning_env.py     # HotpotQA (HuggingFace or local JSON)
+│   ├── tool_env.py          # BFCL-style function calling
+│   └── bfcl_lite.py         # Bundled tasks + deterministic AST evaluator
 ├── evaluation/
 │   ├── metrics.py           # success@k, sample_efficiency, cost, pass@k
-│   └── reflection_quality.py # GPT-4o reflection quality judge
+│   └── reflection_quality.py # GPT-4o reflection quality judge (optional)
 ├── experiments/
-│   ├── run_experiment.py    # CLI for single conditions
-│   ├── run_k_ablation.py    # k-ablation script
-│   ├── run_all.sh           # Full 9-condition sweep (Unix)
-│   └── run_all.ps1          # Full 9-condition sweep (Windows)
+│   ├── run_experiment.py    # CLI for a single backend × domain condition
+│   ├── run_k_ablation.py    # k-ablation: test reflection_k ∈ {1,3,5,10}
+│   ├── run_all.sh           # Full 9-condition sweep (Unix/Git Bash)
+│   └── run_all.ps1          # Full 9-condition sweep (Windows PowerShell)
 ├── analysis/
-│   ├── plots.py             # Publication figures
-│   ├── report.py            # Human-readable reports from result JSON
-│   └── summary_table.py     # LaTeX tables + Wilcoxon tests
-├── tests/                   # pytest suite (no live API in unit tests)
-├── pytest.ini               # Pytest defaults
-└── reflexiontesting.json    # Optional HotpotQA-shaped corpus for reasoning
+│   ├── generate_analysis.py # Master script: loads canonical results, generates all outputs
+│   ├── plots.py             # Matplotlib/seaborn figure functions
+│   ├── report.py            # Per-run human-readable reports from result JSON
+│   └── summary_table.py     # LaTeX table + Wilcoxon signed-rank tests
+├── paper/
+│   ├── main.tex             # Full NeurIPS-format paper
+│   ├── references.bib       # BibTeX bibliography
+│   └── build.ps1            # Compile to PDF (requires MiKTeX or TeX Live)
+├── results/                 # Canonical experiment results (tracked in git)
+│   ├── sliding_window_reasoning_20260423_144015.json
+│   ├── sql_reasoning_20260423_145146.json   # SQL v1 (buggy ordering — ablation baseline)
+│   ├── sql_reasoning_20260503_170631.json   # SQL v2 (fixed ordering — main result)
+│   ├── vector_reasoning_20260423_153235.json
+│   ├── sliding_window_tool_20260425_021421.json
+│   ├── sql_tool_20260425_021950.json
+│   ├── vector_tool_20260425_022323.json
+│   └── analysis/            # Generated figures, tables, and statistical tests
+├── docs/
+│   ├── TESTING.md           # CI / pytest guide
+│   └── BFCL_MIGRATION.md    # Why BFCL instead of ToolBench
+├── tests/                   # pytest suite (no live API calls in unit tests)
+│   ├── test_memory.py
+│   ├── test_environments.py
+│   └── test_agent.py
+├── data/
+│   └── hotpotqa_validation.json  # Local HotpotQA corpus (offline, reproducible)
+├── reflexiontesting.json    # Minimal 2-example fixture for pytest (offline)
+├── pytest.ini
+├── requirements.txt
+├── setup.py
+└── docker-compose.yml       # Optional PostgreSQL alternative (scale-up only)
+```
+
+---
+
+## Prerequisites
+
+- Python 3.9+
+- OpenAI API key (`OPENAI_API_KEY`) — required for experiments; **not** required for `pytest`
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/shilojeyaraj/ReflexionAnalysisPaper.git
+cd ReflexionAnalysisPaper
+
+# Install Python dependencies
+pip install -r requirements.txt
+pip install -e .
+
+# Copy environment template and add your API key
+cp .env.example .env
+# Edit .env: set OPENAI_API_KEY=sk-...
+
+# Optional: install HumanEval harness (code domain only)
+pip install -e git+https://github.com/openai/human-eval.git#egg=human-eval
+# Then read and uncomment the execution call in human_eval/execution.py
+# (safety measure — runs untrusted LLM-generated code)
+```
+
+---
+
+## Reproducing the Paper Analysis
+
+All canonical result files are checked into `results/`. You can regenerate every figure and table without running any experiments:
+
+```bash
+python analysis/generate_analysis.py
+```
+
+This produces in `results/analysis/`:
+- `success_curves.png` — success@k by trial (1–5), one subplot per domain, one line per backend
+- `attempt_distribution.png` — histogram of attempts-to-solve per backend
+- `reward_progression.png` — mean reward per attempt across backends
+- `token_cost.png` — tokens per task by backend and domain
+- `error_type_breakdown.png` — error type distribution
+- `summary_table.csv` — all metrics in tabular form
+- `latex_table.tex` — ready-to-paste LaTeX table
+- `statistical_tests.txt` — Wilcoxon signed-rank test results
+- `analysis_report.md` — human-readable findings summary
+
+---
+
+## Running Experiments
+
+### Unit tests (no API key, ~40 seconds)
+```bash
+python -m pytest tests/ -v
+```
+Expected: 40 passed.
+
+### Dry run (3 tasks, ~$0.05)
+```bash
+python experiments/run_experiment.py --backend sql --domain reasoning --dry-run
+```
+
+### Single full condition (~$1–3)
+```bash
+python experiments/run_experiment.py --backend sliding_window --domain reasoning
+python experiments/run_experiment.py --backend sql --domain reasoning
+python experiments/run_experiment.py --backend vector --domain reasoning
+```
+
+### Full 9-condition sweep (~$15–30 total)
+```bash
+# Unix / Git Bash
+bash experiments/run_all.sh
+
+# Windows PowerShell
+pwsh -File experiments/run_all.ps1
+```
+
+### k-ablation (optional, ~$8–12)
+```bash
+python experiments/run_k_ablation.py --domain reasoning --k-values 1,3,5,10 --n-tasks 30
+```
+
+### Warm-up pre-population (removes cold-start confound)
+```bash
+python experiments/run_experiment.py --backend sql --domain reasoning --seed-memory
 ```
 
 ---
@@ -174,36 +195,35 @@ from analysis.summary_table import run_statistical_tests
 ## Memory Backends
 
 ### Sliding Window (baseline)
-Stores episodes in an in-memory Python list and retrieves the most recent `window_size` episodes regardless of their content. This mirrors the episodic buffer in the original Reflexion paper (Shinn et al., 2023). **Retrieval hypothesis**: recency alone is sufficient if recent experience is relevant.
+In-memory Python list; retrieval returns the `window_size` most recent episodes regardless of content. Mirrors the episodic buffer in Shinn et al. (2023). **Hypothesis**: recency alone is sufficient if recent experience is relevant.
 
-### SQL (SQLite)
-Stores episodes in a SQLite database and retrieves by filtering on `domain` and ranking by `success DESC, reward DESC`. Also supports structured retrieval by `error_type` (e.g., all past `syntax_error` episodes). **Retrieval hypothesis**: precise credit assignment by error category produces more targeted reflections for tasks with well-defined failure modes (tool-use > reasoning > code).
+### SQL — SQLite
+Stores episodes in SQLite; retrieval filters by `domain`, then ranks by `success ASC, timestamp DESC` — **failure episodes surface first**, so the agent sees what went wrong rather than what already worked. Supports `retrieve_by_error_type()` for targeted credit assignment. **Hypothesis**: structured error-type matching produces more targeted reflections for tasks with nameable failure modes (tool-use > reasoning > code).
 
-### Vector DB (ChromaDB)
-Embeds episodes as `"{domain}: {action_summary} -> {reflection}"` and retrieves by cosine similarity to the current task description. **Retrieval hypothesis**: semantically similar tasks share lessons even if they have different error types or task IDs, particularly in tasks with diverse surface forms (reasoning > code > tool).
+> **Ablation note**: An earlier version used `ORDER BY success DESC` (surfacing successes). This lowered success@5 by 12pp on reasoning. The ordering direction is a first-order variable for SQL-based Reflexion memory.
+
+### Vector DB — ChromaDB
+Embeds `"{domain}: {action_summary} -> {reflection}"` via `all-MiniLM-L6-v2`; retrieves by cosine similarity to the current task description. Filters out retrievals below `min_similarity` (default 0.55) rather than padding with irrelevant episodes. **Hypothesis**: semantically similar tasks share lessons across different error types or task IDs.
 
 ---
 
 ## Task Domains
 
-### Code (HumanEval)
-- **Benchmark**: OpenAI HumanEval — 164 Python programming problems
-- **Evaluation**: Official sandboxed execution harness (`check_correctness`)
-- **Metric**: pass@k (unbiased estimator from Chen et al. 2021)
-- **Setup**: requires manual uncommenting in `human_eval/execution.py`
+### Reasoning — HotpotQA
+- **Benchmark**: HotpotQA distractor validation split; local JSON (`data/hotpotqa_validation.json`) for offline reproducibility
+- **Evaluation**: Exact match (reward 1.0), substring match (reward 0.5), no match (reward 0.0)
+- **Success criterion**: exact match required
 
-### Reasoning (HotpotQA)
-- **Benchmark**: HotpotQA distractor configuration, validation split (~7400 questions), or a local JSON file
-- **Evaluation**: Exact match (reward=1.0) and substring match (reward=0.5)
-- **Metric**: success@k (exact match required for success=True)
-- **Setup**: HuggingFace `datasets` by default; set `hotpot_qa_json_path` in `config/base_config.yaml` (default `./reflexiontesting.json`) or `HOTPOT_QA_JSON` to use a fixed corpus for reproducibility
-
-### Tool-use (BFCL-style / `bfcl_lite`)
-- **Benchmark**: Bundled single-function tasks (same error-typing story as BFCL)
+### Tool-use — BFCL (`bfcl_lite`)
+- **Benchmark**: Berkeley Function Calling Leaderboard-style single-function tasks; bundled in `environments/bfcl_lite.py`
 - **Evaluation**: Deterministic AST matching against ground-truth call specifications
-- **Metric**: success@k (AST check passes = success)
-- **Setup**: none beyond installing this repo — see `docs/BFCL_MIGRATION.md`
-- **Error types**: `wrong_func_name`, `missing_required_param`, `wrong_arg_type`, `wrong_arg_value`, `no_function_call`, etc.
+- **Error types**: `wrong_func_name`, `missing_required_param`, `wrong_arg_type`, `wrong_arg_value`, `no_function_call`
+- **No external API or server required**
+
+### Code — HumanEval (optional)
+- **Benchmark**: 164 Python programming problems; official sandboxed harness
+- **Setup**: requires manual uncommenting in `human_eval/execution.py`; run in a sandbox
+- **Note**: `signal.SIGALRM` is unavailable on Windows — code domain experiments require Linux/macOS or Docker
 
 ---
 
@@ -213,77 +233,89 @@ Embeds episodes as `"{domain}: {action_summary} -> {reflection}"` and retrieves 
 |--------|-------------|
 | `success@k` | Fraction of tasks solved within k attempts |
 | `sample_efficiency` | Mean episodes to reach 70% success rate |
-| `mean_tokens_per_task` | Mean total tokens consumed across all attempts |
+| `mean_tokens_per_task` | Mean total tokens across all attempts |
 | `cost_per_solved_task` | Estimated USD cost per successfully solved task |
 | `pass@k_unbiased` | HumanEval unbiased estimator (Chen et al. 2021) |
-| `reflection_quality` | GPT-4o judge: specificity, actionability, accuracy (1-5) |
-
----
-
-## Database Choice
-
-This project uses **SQLite** (not Supabase or PostgreSQL) for the SQL memory backend.
-
-Rationale for research reproducibility:
-1. **Zero external dependencies** — runs entirely in-process, no network calls
-2. **No latency contamination** — microsecond retrieval vs. 10-100ms for hosted DBs
-3. **Fully reproducible** — runs from `git clone` with no accounts or credentials
-4. **Sufficient scale** — handles thousands of episodes without performance issues
-
-An optional PostgreSQL + pgAdmin setup is provided in `docker-compose.yml` for experiments exceeding 50k episodes or requiring distributed execution.
 
 ---
 
 ## Signal-to-Noise Framework
 
-The key conceptual frame for interpreting results: **signal density** is the fraction of retrieved episodes actually relevant to the current task.
+The central interpretive frame: **signal density** = fraction of retrieved episodes actually relevant to the current task.
 
-- **Sliding window**: density is high (always recent) but quality is random (recency ≠ relevance)
-- **SQL**: density is stable as DB grows (filters maintain precision); recall may miss cross-error-type lessons
-- **Vector DB**: density peaks at 100-500 episodes; degrades above 500 (noise accumulates)
+- **Sliding window**: high density (always recent) but unpredictable quality (recency ≠ relevance)
+- **SQL**: stable density as DB grows (domain + error-type filters maintain precision); may miss cross-error lessons
+- **Vector DB**: peaks at 100–500 episodes; degrades above 500 as noise accumulates
 
-**Predicted interactions**:
-- SQL × tool-use: largest gains (structured error types map directly to SQL filters)
-- Vector × reasoning: largest gains (semantically diverse questions share surface-form lessons)
-- Sliding window: never wins given sufficient episodes
+**Predicted interactions:**
+- SQL × tool-use: largest gains (nameable error types map directly to SQL filters)
+- Vector × reasoning: largest gains (diverse question surfaces share embedding-space lessons)
+- Sliding window: dominated by SQL/vector once enough episodes accumulate
+
+---
+
+## Database Choice
+
+SQLite — not Supabase or PostgreSQL — for three reasons:
+
+1. **Zero external dependencies** — runs from `git clone` with no accounts or credentials
+2. **No latency contamination** — microsecond retrieval vs. 10–100ms for hosted DBs would confound timing metrics
+3. **Sufficient scale** — 50 tasks × 5 trials × 3 domains = 750 episodes max per condition; well within SQLite's range
+
+An optional PostgreSQL + pgAdmin setup is in `docker-compose.yml` for experiments exceeding 50k episodes.
 
 ---
 
 ## Known Limitations
 
-1. **HumanEval safety**: `human_eval/execution.py` requires manual uncommenting before use. Run only in a sandboxed environment (Docker recommended).
-2. **Vector / sentence-transformers**: First run may download an embedding model; CI and headless servers need disk and RAM (see `docs/TESTING.md`).
-3. **Reflection scoring cost**: `--score-reflections` calls the judge model per reflection (extra tokens).
-4. **Warm-up phase**: The first ~20 tasks of any run are effectively a warm-up where all backends look similar. Use `--seed-memory` to control for this.
-5. **Local HotpotQA JSON size**: The default `reflexiontesting.json` has only two examples — fine for smoke tests; use HuggingFace or expand the JSON for full-scale reasoning experiments.
+1. **HumanEval safety**: `human_eval/execution.py` requires manual uncommenting; run only in a sandboxed environment. Unavailable on Windows without WSL.
+2. **Tool ceiling**: All backends reach 100% success@5 on BFCL. Differentiating memory backends on tool-use requires harder multi-step tasks.
+3. **Warm-up phase**: First ~20 tasks of any run are a warm-up where all backends look similar. Use `--seed-memory` to control for this.
+4. **Vector noise**: The `min_similarity` threshold (default 0.55) is a tunable hyperparameter; reported results use this default throughout.
+5. **Reflection scoring cost**: `--score-reflections` calls the judge model per reflection (~2× token cost).
+
+---
+
+## Paper
+
+The full paper is in `paper/main.tex` (NeurIPS format). To compile:
+
+```powershell
+# Requires MiKTeX (Windows) or TeX Live (Linux/macOS)
+pwsh -File paper/build.ps1
+```
+
+Or compile manually:
+```bash
+cd paper
+pdflatex main.tex
+bibtex main
+pdflatex main.tex
+pdflatex main.tex
+```
 
 ---
 
 ## Quickstart
 
 ```bash
-# 1. Clone and install
-git clone <this-repo> && cd ReflexionAnalysisPaper
-pip install -r requirements.txt
-pip install -e git+https://github.com/openai/human-eval.git#egg=human-eval
-pip install -e .
-cp .env.example .env  # then fill in OPENAI_API_KEY
+# 1. Install
+git clone https://github.com/shilojeyaraj/ReflexionAnalysisPaper.git
+cd ReflexionAnalysisPaper
+pip install -r requirements.txt && pip install -e .
+cp .env.example .env      # set OPENAI_API_KEY
 
-# 2. Dry run (sliding window, code only, 3 tasks — no ToolBench needed)
-python experiments/run_experiment.py --backend sliding_window --domain code --dry-run
+# 2. Verify installation (no API key needed)
+python -m pytest tests/ -v          # should show 40 passed
 
-# 3. Full single condition
-python experiments/run_experiment.py --backend sql --domain code
+# 3. Reproduce paper analysis from committed results
+python analysis/generate_analysis.py
 
-# 4. Full 9-condition suite
-bash experiments/run_all.sh
-# Windows: pwsh -File experiments/run_all.ps1
+# 4. Run a new experiment (dry run, ~$0.05)
+python experiments/run_experiment.py --backend sql --domain reasoning --dry-run
 
-# 4b. Unit tests (no API key)
-python -m pytest tests/ -v
-
-# 5. Generate all analysis plots
-python -c "from analysis.plots import plot_all; plot_all('./results', './figures')"
+# 5. Run the full sweep (~$15-30)
+bash experiments/run_all.sh         # or: pwsh -File experiments/run_all.ps1
 ```
 
 ---
@@ -291,11 +323,12 @@ python -c "from analysis.plots import plot_all; plot_all('./results', './figures
 ## Citation
 
 ```bibtex
-@misc{reflexion-memory-study-2024,
-  title   = {Reflexion Memory Backends: A Comparative Study of Persistent vs. Recency-Based Episodic Memory},
-  author  = {[Author]},
-  year    = {2024},
-  url     = {https://github.com/[username]/ReflexionAnalysisPaper},
-  note    = {Code available at the linked repository}
+@misc{jeyaraj2026reflexion,
+  title   = {Memory Retrieval Strategy Matters: A Comparative Study of
+             Episodic Memory Backends for Reflexion-Style LLM Agents},
+  author  = {Jeyaraj, Shilo},
+  year    = {2026},
+  url     = {https://github.com/shilojeyaraj/ReflexionAnalysisPaper},
+  note    = {University of Waterloo}
 }
 ```

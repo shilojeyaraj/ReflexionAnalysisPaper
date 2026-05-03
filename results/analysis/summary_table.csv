@@ -1,0 +1,8 @@
+backend,domain,n_tasks,n_solved,success@1,success@3,success@5,sample_efficiency,mean_tokens,cost_per_solved_usd
+sliding_window,reasoning,50,43,0.58,0.84,0.86,99.0,3966.8,0.0152
+sql_v1,reasoning,50,36,0.58,0.7,0.72,121.0,4648.7,0.01343
+sql,reasoning,50,42,0.58,0.78,0.84,88.0,4075.6,0.01505
+vector,reasoning,50,42,0.7,0.82,0.84,48.0,3621.2,0.01248
+sliding_window,tool,40,40,0.9,1.0,1.0,32.0,854.6,0.00427
+sql,tool,40,40,0.925,1.0,1.0,31.0,880.8,0.0044
+vector,tool,40,40,0.975,1.0,1.0,29.0,787.8,0.00394

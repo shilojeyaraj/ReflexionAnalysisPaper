@@ -19,7 +19,14 @@
       "Bash(PYTHONIOENCODING=utf-8 CHROMA_PERSIST_DIR=./chroma_code python experiments/run_experiment.py --backend vector --domain code --n-tasks 50)",
       "Bash(PYTHONIOENCODING=utf-8 CHROMA_PERSIST_DIR=./chroma_reasoning python experiments/run_experiment.py --backend vector --domain reasoning --n-tasks 50)",
       "Bash(PYTHONIOENCODING=utf-8 CHROMA_PERSIST_DIR=./chroma_tool python experiments/run_experiment.py --backend vector --domain tool --n-tasks 50)",
-      "Bash(python -c \"import json; d=json.load\\(open\\('results/sliding_window_reasoning_20260423_144015.json'\\)\\); print\\(list\\(d.keys\\(\\)\\)\\); print\\(type\\(d\\)\\)\")"
+      "Bash(python -c \"import json; d=json.load\\(open\\('results/sliding_window_reasoning_20260423_144015.json'\\)\\); print\\(list\\(d.keys\\(\\)\\)\\); print\\(type\\(d\\)\\)\")",
+      "Bash(grep -E \"\\\\.json$\")",
+      "Bash(python experiments/run_k_ablation.py --domain reasoning --backends sliding_window,sql,vector --k-values 1,3,5,10 --n-tasks 30)",
+      "Bash(python *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(Select-String \"mini|Mini|GPT-4o-mini\")"
     ]
   }
 }

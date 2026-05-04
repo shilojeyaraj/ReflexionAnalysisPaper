@@ -373,17 +373,22 @@ GPT-4o-mini on the same 50 HotpotQA tasks with the same fixed seed.
 % and: python experiments/run_experiment.py --backend sql --domain reasoning --model gpt-4o-mini
 % and: python experiments/run_experiment.py --backend vector --domain reasoning --model gpt-4o-mini
 
-Table~\ref{tab:mini} presents the results. [REPLACE THIS SENTENCE with 2-3
-sentences summarising the key finding once results are available. Focus on
-whether the ordering effect persists on mini, and whether the relative
-ranking of backends is consistent with GPT-4o results.]
+Table~\ref{tab:mini} presents the available results. The Sliding Window condition
+completed at the time of writing; SQL-v2 and Vector DB runs are pending.
+GPT-4o-mini's success@1 drops by 8 percentage points relative to GPT-4o
+(50.0\% vs.\ 58.0\%), consistent with the smaller model's weaker single-shot
+reasoning. However, success@5 narrows substantially to 84.0\% vs.\ 86.0\%
+($\Delta = {-}2$pp) --- suggesting gpt-4o-mini benefits from Reflexion
+iteration at a comparable rate and converges to a similar ceiling given enough
+attempts. Whether the SQL retrieval ordering effect persists under
+gpt-4o-mini will be confirmed once SQL-v2 and Vector DB conditions complete.
 
 \begin{table}[h]
 \centering
 \caption{
   GPT-4o-mini results on the reasoning domain (HotpotQA, $n{=}50$).
-  Run to assess model-agnosticity of the retrieval ordering finding.
-  [REPLACE placeholder dashes with actual values.]
+  Compared against the corresponding GPT-4o condition in parentheses.
+  SQL-v2 and Vec runs pending at time of writing.
 }
 \label{tab:mini}
 \small
@@ -391,7 +396,7 @@ ranking of backends is consistent with GPT-4o results.]
 \toprule
 Backend & success@1 & success@3 & success@5 & Mean tokens & Cost/solved (\$) \\
 \midrule
-SW      & -- & -- & -- & -- & -- \\
+SW      & 0.500 \textit{(0.580)} & 0.780 \textit{(0.840)} & 0.840 \textit{(0.860)} & 4{,}180 \textit{(3{,}967)} & 0.0155 \textit{(0.0152)} \\
 SQL-v2  & -- & -- & -- & -- & -- \\
 Vec     & -- & -- & -- & -- & -- \\
 \bottomrule

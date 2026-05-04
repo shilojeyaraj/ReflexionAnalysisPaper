@@ -178,7 +178,33 @@ error types are diffuse. The tool domain is a ceiling-effect case.
 4. Replace BFCL with a harder tool benchmark (ToolBench G2/G3) for the tool domain.
 5. Run 3 seeds per condition and report mean ± std in the summary table.
 
-## 8. Files Generated
+## 8. GPT-4o-mini Model Generalisability
+
+
+This section tracks the secondary GPT-4o-mini conditions run on the reasoning
+domain to test whether the retrieval ordering finding generalises across model
+capability levels. Results are added as runs complete.
+
+### 8.1 Available mini results vs GPT-4o baseline
+
+| Backend | Model | success@1 | success@3 | success@5 | Mean tokens | Cost/solved ($) |
+|---------|-------|-----------|-----------|-----------|-------------|-----------------|
+| Sliding Window | GPT-4o | 0.580 | 0.840 | 0.860 | 3966 | 0.01520 |
+| Sliding Window | GPT-4o-mini | 0.500 | 0.780 | 0.840 | 4180 | 0.01551 |
+| SQL v2 (failure-first, fixed) | GPT-4o | 0.580 | 0.780 | 0.840 | 4075 | 0.01505 |
+| SQL v2 (failure-first, fixed) | GPT-4o-mini | *pending* | *pending* | *pending* | — | — |
+| Vector DB (Chroma) | GPT-4o | 0.700 | 0.820 | 0.840 | 3621 | 0.01248 |
+| Vector DB (Chroma) | GPT-4o-mini | *pending* | *pending* | *pending* | — | — |
+
+**Key observation (SW condition):** GPT-4o-mini shows success@1=50.0%
+vs GPT-4o's 58.0% (Δ=-8.0%), but success@5 narrows to
+84.0% vs 86.0% (Δ=-2.0%).
+The smaller success@5 gap (2.0%) relative to the success@1 gap (8.0%)
+suggests gpt-4o-mini benefits from Reflexion iteration at a similar rate to GPT-4o —
+it just needs more attempts to reach the same endpoint.
+SQL-v2 and Vector DB runs pending to confirm whether the ordering effect persists.
+
+## 9. Files Generated
 
 
 | File | Description |

@@ -70,6 +70,14 @@ RESULT_FILES = {
     ("vector",         "tool"):      "results/vector_tool_20260425_022323.json",
 }
 
+# GPT-4o-mini secondary conditions (reasoning domain only, for model-agnosticity check).
+# Add SQL-v2 and Vec paths here once those runs complete.
+MINI_FILES = {
+    ("sliding_window", "reasoning"): "results/sliding_window_reasoning_gpt_4o_mini_20260503_235640.json",
+    # ("sql",  "reasoning"): "results/sql_reasoning_gpt_4o_mini_<timestamp>.json",
+    # ("vector","reasoning"): "results/vector_reasoning_gpt_4o_mini_<timestamp>.json",
+}
+
 DOMAINS   = ["reasoning", "tool"]
 # sql_v1 only has data for reasoning — tool plots will skip it gracefully (no data)
 BACKENDS  = ["sliding_window", "sql_v1", "sql", "vector"]
@@ -111,6 +119,25 @@ def load_all() -> dict:
             results = json.load(f)
         data[(backend, domain)] = results
         logger.info("Loaded %-20s × %-10s  n=%d  success=%.1f%%",
+                    backend, domain,
+                    len(results),
+                    100 * sum(r["success"] for r in results) / len(results))
+    return data
+
+
+def load_mini() -> dict:
+    """Load GPT-4o-mini result files. Returns {(backend, domain): [result_dict]}."""
+    data = {}
+    root = Path(__file__).resolve().parent.parent
+    for (backend, domain), rel_path in MINI_FILES.items():
+        full = root / rel_path
+        if not full.exists():
+            logger.warning("Mini file missing: %s", full)
+            continue
+        with open(full, encoding="utf-8") as f:
+            results = json.load(f)
+        data[(backend, domain)] = results
+        logger.info("Loaded mini %-20s × %-10s  n=%d  success=%.1f%%",
                     backend, domain,
                     len(results),
                     100 * sum(r["success"] for r in results) / len(results))
@@ -765,7 +792,70 @@ error types are diffuse. The tool domain is a ceiling-effect case.
 5. Run 3 seeds per condition and report mean ± std in the summary table.
 """)
 
-    lines.append("## 8. Files Generated\n")
+    lines.append("## 8. GPT-4o-mini Model Generalisability\n")
+    lines.append("""
+This section tracks the secondary GPT-4o-mini conditions run on the reasoning
+domain to test whether the retrieval ordering finding generalises across model
+capability levels. Results are added as runs complete.
+""")
+
+    mini_data = load_mini()
+    if mini_data:
+        lines.append("### 8.1 Available mini results vs GPT-4o baseline\n")
+        lines.append("| Backend | Model | success@1 | success@3 | success@5 | Mean tokens | Cost/solved ($) |")
+        lines.append("|---------|-------|-----------|-----------|-----------|-------------|-----------------|")
+
+        comparison_backends = sorted(
+            set(b for (b, _) in list(mini_data.keys()) + [(b, "reasoning") for b in ["sliding_window", "sql", "vector"]])
+        )
+        for backend in comparison_backends:
+            key = (backend, "reasoning")
+            # GPT-4o row (from main data)
+            gpt4o_row = df[(df.backend == backend) & (df.domain == "reasoning")]
+            if not gpt4o_row.empty:
+                r = gpt4o_row.iloc[0]
+                cost = f"{r['cost_per_solved_usd']:.5f}" if r["cost_per_solved_usd"] != float("inf") else "inf"
+                lines.append(
+                    f"| {BACKEND_LABELS.get(backend, backend)} | GPT-4o | "
+                    f"{r['success@1']:.3f} | {r['success@3']:.3f} | {r['success@5']:.3f} | "
+                    f"{int(r['mean_tokens'])} | {cost} |"
+                )
+            # Mini row (if available)
+            if key in mini_data:
+                m = aggregate_metrics(mini_data[key])
+                cost = f"{m['cost_per_solved_usd']:.5f}" if m["cost_per_solved_usd"] != float("inf") else "inf"
+                lines.append(
+                    f"| {BACKEND_LABELS.get(backend, backend)} | GPT-4o-mini | "
+                    f"{m['success_at_1']:.3f} | {m['success_at_3']:.3f} | {m['success_at_5']:.3f} | "
+                    f"{int(m['mean_tokens'])} | {cost} |"
+                )
+            elif gpt4o_row.empty:
+                pass  # no data for this backend in either set
+            else:
+                lines.append(f"| {BACKEND_LABELS.get(backend, backend)} | GPT-4o-mini | *pending* | *pending* | *pending* | — | — |")
+
+        # Narrative for available mini results
+        sw_mini = mini_data.get(("sliding_window", "reasoning"))
+        if sw_mini:
+            sw_mini_m = aggregate_metrics(sw_mini)
+            sw_gpt4o_row = df[(df.backend == "sliding_window") & (df.domain == "reasoning")]
+            if not sw_gpt4o_row.empty:
+                sw_gpt4o = sw_gpt4o_row.iloc[0]
+                s1_delta = sw_mini_m["success_at_1"] - sw_gpt4o["success@1"]
+                s5_delta = sw_mini_m["success_at_5"] - sw_gpt4o["success@5"]
+                lines.append(f"""
+**Key observation (SW condition):** GPT-4o-mini shows success@1={sw_mini_m['success_at_1']:.1%}
+vs GPT-4o's {sw_gpt4o['success@1']:.1%} (Δ={s1_delta:+.1%}), but success@5 narrows to
+{sw_mini_m['success_at_5']:.1%} vs {sw_gpt4o['success@5']:.1%} (Δ={s5_delta:+.1%}).
+The smaller success@5 gap ({abs(s5_delta):.1%}) relative to the success@1 gap ({abs(s1_delta):.1%})
+suggests gpt-4o-mini benefits from Reflexion iteration at a similar rate to GPT-4o —
+it just needs more attempts to reach the same endpoint.
+SQL-v2 and Vector DB runs pending to confirm whether the ordering effect persists.
+""")
+    else:
+        lines.append("_No mini results loaded. Run the gpt-4o-mini conditions and add their paths to MINI_FILES._\n")
+
+    lines.append("## 9. Files Generated\n")
     lines.append("""
 | File | Description |
 |------|-------------|
@@ -800,6 +890,12 @@ def main() -> None:
     if not data:
         logger.error("No result files loaded — aborting.")
         sys.exit(1)
+
+    mini_data = load_mini()
+    if mini_data:
+        logger.info("Loaded %d GPT-4o-mini condition(s).", len(mini_data))
+    else:
+        logger.info("No GPT-4o-mini results found (run mini conditions to populate).")
 
     # 2. Build summary table
     df = build_summary_table(data)

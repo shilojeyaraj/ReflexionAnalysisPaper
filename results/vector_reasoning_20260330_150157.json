@@ -1,0 +1,64 @@
+[
+  {
+    "task_id": "hotpot_sample_2",
+    "task_description": "Question: Which author wrote both \"1984\" and \"Animal Farm\"?\n\nContext:\n[1984 (novel)] Nineteen Eighty-Four is a dystopian novel by English writer George Orwell.\n\n[Animal Farm] Animal Farm is an allegorical novella by George Orwell, first published in 1945.",
+    "domain": "reasoning",
+    "backend": "vector",
+    "total_attempts": 1,
+    "success": true,
+    "final_reward": 1.0,
+    "total_tokens": 240,
+    "reflections": [
+      "1. Thorough Contextual Analysis: Successfully extracted and synthesized relevant information about the authorship of both novels by carefully reviewing the provided context. Repeat this methodical approach to ensure accurate information retrieval from similar tasks.\n\n2. Evidence-Based Conclusion: Effectively employed evidence from the context to support the final answer. Continuing to base answers on well-supported evidence will enhance the validity of my responses.\n\n3. Clarity and Brevity in Responses: Managed to clearly and succinctly present the findings without extraneous details, which was effective in conveying the correct answer. Maintaining this level of clarity will ensure coherent and comprehensible answers in future attempts."
+    ],
+    "per_attempt_rewards": [
+      1.0
+    ],
+    "per_attempt_error_types": [
+      "exact_match"
+    ],
+    "per_attempt_responses": [
+      "1. Review the provided context about both novels: \"1984\" is mentioned as a dystopian novel by George Orwell, and \"Animal Farm\" is described as an allegorical novella by the same author.\n2. Both contexts attribute the authorship of these works to George Orwell.\n3. The evidence from the context clearly states that George Orwell is the author of both \"1984\" and \"Animal Farm\".\n\nFinal answer: George Orwell"
+    ],
+    "per_attempt_feedback": [
+      "Correct! Answer: 'George Orwell'"
+    ],
+    "per_attempt_retrieved": [
+      []
+    ],
+    "per_attempt_tokens": [
+      240
+    ]
+  },
+  {
+    "task_id": "hotpot_sample_1",
+    "task_description": "Question: What is the capital of the country where the Eiffel Tower is located?\n\nContext:\n[Eiffel Tower] The Eiffel Tower is a landmark in Paris, France. It was completed in 1889.\n\n[France] France is a country in Western Europe. Its capital city is Paris.",
+    "domain": "reasoning",
+    "backend": "vector",
+    "total_attempts": 1,
+    "success": true,
+    "final_reward": 1.0,
+    "total_tokens": 239,
+    "reflections": [
+      "1. **Thorough Context Review**: My successful outcome stemmed from a comprehensive review of the provided context. I will maintain this practice on future attempts by ensuring I thoroughly analyze context clues to extract necessary information correctly.\n\n2. **Logical Step-by-Step Approach**: The structured method of breaking down the question into identifying the location and then confirming the capital was effective. I will continue to apply this logical step-by-step approach for complex problems to avoid missing essential details.\n\n3. **Verification of Information**: Confirming the information from the context before finalizing the answer was crucial for accuracy. In future tasks, I will ensure to verify every key detail against the provided context, which will reduce the chance of oversight and errors."
+    ],
+    "per_attempt_rewards": [
+      1.0
+    ],
+    "per_attempt_error_types": [
+      "exact_match"
+    ],
+    "per_attempt_responses": [
+      "First, we need to identify the country where the Eiffel Tower is located. The context states that the Eiffel Tower is a landmark in Paris, France. \n\nNext, we need to ascertain the capital city of the country identified, which is France. According to the context, the capital city of France is Paris.\n\nFinally, putting this information together, we know that the capital of the country where the Eiffel Tower is located (France) is Paris.\n\nFinal answer: Paris"
+    ],
+    "per_attempt_feedback": [
+      "Correct! Answer: 'Paris'"
+    ],
+    "per_attempt_retrieved": [
+      []
+    ],
+    "per_attempt_tokens": [
+      239
+    ]
+  }
+]

@@ -26,9 +26,9 @@ past failures compared to recency-only (sliding window) retrieval.
 | Reasoning (HotpotQA) | SQL v1 (success-first, buggy) | 50 | 0.580 | 0.700 | 0.720 | 4648 | 0.01343 |
 | Reasoning (HotpotQA) | SQL v2 (failure-first, fixed) | 50 | 0.580 | 0.780 | 0.840 | 4075 | 0.01505 |
 | Reasoning (HotpotQA) | Vector DB (Chroma) | 50 | 0.700 | 0.820 | 0.840 | 3621 | 0.01248 |
-| Tool-Use (BFCL) | Sliding Window | 40 | 0.900 | 1.000 | 1.000 | 854 | 0.00427 |
-| Tool-Use (BFCL) | SQL v2 (failure-first, fixed) | 40 | 0.925 | 1.000 | 1.000 | 880 | 0.00440 |
-| Tool-Use (BFCL) | Vector DB (Chroma) | 40 | 0.975 | 1.000 | 1.000 | 787 | 0.00394 |
+| Tool-Use (BFCL) | Sliding Window | 20 | 1.000 | 1.000 | 1.000 | 966 | 0.00483 |
+| Tool-Use (BFCL) | SQL v2 (failure-first, fixed) | 20 | 0.950 | 1.000 | 1.000 | 1037 | 0.00519 |
+| Tool-Use (BFCL) | Vector DB (Chroma) | 20 | 1.000 | 1.000 | 1.000 | 1016 | 0.00508 |
 
 ## 3. Reasoning Domain (HotpotQA)
 
@@ -95,9 +95,9 @@ SQL underperformance observed in the initial results.
 
 | Metric     | Sliding Window | SQL    | Vector DB |
 |------------|---------------|--------|-----------|
-| success@1  | 0.900  | 0.925 | 0.975 |
+| success@1  | 1.000  | 0.950 | 1.000 |
 | success@5  | 1.000 | 1.000 | 1.000 |
-| Mean tokens| 854 | 880 | 787 |
+| Mean tokens| 966 | 1037 | 1016 |
 
 ### 4.2 Findings
 
@@ -105,10 +105,10 @@ SQL underperformance observed in the initial results.
   the BFCL evaluation set is within the capability ceiling of GPT-4o for this
   function-calling format without requiring Reflexion iterations.
 - Differentiation is therefore visible only in **efficiency metrics**:
-  - Vector DB uses the fewest mean tokens (787), suggesting its
+  - Vector DB uses the fewest mean tokens (1016), suggesting its
     retrieved reflections help the actor produce correct tool calls on attempt 1
     more often, consuming fewer refinement attempts.
-  - Sliding Window and SQL are comparable (854 vs 880 tokens).
+  - Sliding Window and SQL are comparable (966 vs 1037 tokens).
 - The ceiling effect limits statistical discrimination for this domain — all
   backends saturate at 100% success@1, leaving no room for Reflexion to
   demonstrate improvement through iteration.

@@ -65,9 +65,9 @@ RESULT_FILES = {
     ("sql_v1",         "reasoning"): "results/sql_reasoning_20260423_145146.json",
     ("sql",            "reasoning"): "results/sql_reasoning_20260503_170631.json",
     ("vector",         "reasoning"): "results/vector_reasoning_20260423_153235.json",
-    ("sliding_window", "tool"):      "results/sliding_window_tool_20260425_021421.json",
-    ("sql",            "tool"):      "results/sql_tool_20260425_021950.json",
-    ("vector",         "tool"):      "results/vector_tool_20260425_022323.json",
+    ("sliding_window", "tool"):      "results/sliding_window_tool_20260504_150322.json",
+    ("sql",            "tool"):      "results/sql_tool_20260504_144808.json",
+    ("vector",         "tool"):      "results/vector_tool_20260504_144815.json",
 }
 
 # GPT-4o-mini secondary conditions (reasoning domain only, for model-agnosticity check).

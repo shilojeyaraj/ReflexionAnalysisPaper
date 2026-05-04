@@ -12,6 +12,6 @@ Domain: Reasoning (HotpotQA)
 
 Domain: Tool-Use (BFCL)
 ----------------------------------------
-  Sliding Window (100.0%) vs SQL v2 (failure-first, fixed) (100.0%):  n=40, W=0.00, p=nan  n.s.
-  Sliding Window (100.0%) vs Vector DB (Chroma) (100.0%):  n=40, W=0.00, p=nan  n.s.
-  SQL v2 (failure-first, fixed) (100.0%) vs Vector DB (Chroma) (100.0%):  n=40, W=0.00, p=nan  n.s.
+  Sliding Window (100.0%) vs SQL v2 (failure-first, fixed) (100.0%):  n=20, W=0.00, p=nan  n.s.
+  Sliding Window (100.0%) vs Vector DB (Chroma) (100.0%):  n=20, W=0.00, p=nan  n.s.
+  SQL v2 (failure-first, fixed) (100.0%) vs Vector DB (Chroma) (100.0%):  n=20, W=0.00, p=nan  n.s.

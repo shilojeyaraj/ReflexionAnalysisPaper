@@ -140,13 +140,13 @@ principles to the agent self-improvement setting.
 \paragraph{Tool-use and function calling benchmarks.}
 The Berkeley Function-Calling Leaderboard (BFCL; \citealt{yan2024bfcl})
 provides standardised evaluation of LLM function-calling accuracy using AST
-matching. We initially used BFCL's simple single-function split but observed
-a ceiling effect (100\% success@5 across all backends), indicating the tasks
-are too easy for GPT-4o to allow memory backends to differentiate. We
-therefore replace this with BFCL's \emph{multiple\_function} split, which
-requires the agent to select the correct function from a set of candidates
-with similar signatures, creating harder disambiguation tasks where prior
-reflection on past errors is more likely to provide signal.
+matching. We evaluate on BFCL's \emph{multiple\_function} split, which requires the
+agent to select the correct function from a candidate set with similar
+signatures. Despite this harder disambiguation requirement, a 100\% success@5
+ceiling persists across all backends, indicating that GPT-4o solves these
+tasks reliably without needing memory-assisted iteration. Sequential
+multi-tool benchmarks such as ToolBench \citep{qin2023toolllm} are likely
+needed to create the graded signal required for backend differentiation.
 
 \paragraph{Multi-step reasoning.}
 HotpotQA \citep{yang2018hotpotqa} requires multi-hop reasoning over Wikipedia
@@ -209,15 +209,13 @@ validation split using a fixed seed. Reward is 1.0 for exact match, 0.5 for
 substring match, 0.0 otherwise. Error types: \texttt{exact\_match},
 \texttt{partial\_match}, \texttt{wrong\_answer}.
 
-\emph{Tool-use (BFCL multiple\_function):} We sample 60 tasks from the
-BFCL \texttt{multiple\_function} split \citep{yan2024bfcl}, which requires
+\emph{Tool-use (BFCL multiple\_function):} We use all 20 available tasks from
+the BFCL \texttt{multiple\_function} split \citep{yan2024bfcl}, which requires
 selecting the correct function from among candidates with similar names and
 signatures. The agent outputs Python function call syntax; correctness is
 evaluated by AST matching against the reference call. Reward is binary
 (1.0/0.0). Error types: \texttt{success}, \texttt{wrong\_function},
 \texttt{wrong\_args}, \texttt{type\_error}, \texttt{ambiguous\_selection}.
-We increased the task count from 40 to 60 to improve statistical power
-given the harder task distribution.
 
 \paragraph{Note on code domain.} The HumanEval benchmark \citep{chen2021humaneval}
 was excluded because its execution harness relies on \texttt{signal.SIGALRM},
@@ -255,7 +253,8 @@ per-task binary success@5 scores, with $p < 0.05$ as the significance threshold.
   SW = Sliding Window; SQL-v1 = SQL with success-first retrieval (original,
   buggy); SQL-v2 = SQL with failure-first retrieval (corrected);
   Vec = Vector DB. Best per domain in \textbf{bold}.
-  $n{=}50$ for reasoning, $n{=}40$ for tool-use.
+  $n{=}50$ for reasoning, $n{=}20$ for tool-use (all available
+  \texttt{multiple\_function} tasks).
 }
 \label{tab:main}
 \small
@@ -270,9 +269,9 @@ Domain & Backend & success@1 & success@3 & success@5 & Mean tokens & Cost/solved
   & Vec         & \textbf{0.700} & 0.820 & 0.840          & \textbf{3{,}621} & \textbf{0.0125} \\
 \midrule
 \multirow{3}{*}{Tool-use}
-  & SW          & 0.900          & \textbf{1.000} & \textbf{1.000} & 855 & 0.0043 \\
-  & SQL-v2      & 0.925          & \textbf{1.000} & \textbf{1.000} & 881 & 0.0044 \\
-  & Vec         & \textbf{0.975} & \textbf{1.000} & \textbf{1.000} & \textbf{788} & \textbf{0.0039} \\
+  & SW          & \textbf{1.000} & \textbf{1.000} & \textbf{1.000} & \textbf{966}  & \textbf{0.0048} \\
+  & SQL-v2      & 0.950          & \textbf{1.000} & \textbf{1.000} & 1{,}037       & 0.0052 \\
+  & Vec         & \textbf{1.000} & \textbf{1.000} & \textbf{1.000} & 1{,}016       & 0.0051 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -343,16 +342,18 @@ are valuable for \emph{few-shot exemplars} but counterproductive for
 \label{fig:ordering}
 \end{figure}
 
-\subsection{Tool-Use Domain (BFCL)}
+\subsection{Tool-Use Domain (BFCL multiple\_function)}
 
-All three backends achieve 100\% success@5 on the BFCL simple split. GPT-4o
-solves the vast majority of tasks on the first attempt (90--97.5\%), leaving
-little room for Reflexion iterations to demonstrate improvement. The token
-efficiency advantage of Vec persists (788 mean tokens vs.\ 855/881), suggesting
-its retrieved reflections help the actor produce correct function calls on the
-first attempt more often. However, the ceiling effect prevents any statistically
-meaningful backend comparison ($p = \text{nan}$ for all pairs). We discuss the
-benchmark selection implications in Section~\ref{sec:discussion}.
+All three backends achieve 100\% success@5 on the BFCL \texttt{multiple\_function}
+split ($n{=}20$). Despite the harder disambiguation requirement, GPT-4o solves
+nearly all tasks on the first attempt: SW and Vec achieve 100\% success@1, while
+SQL-v2 reaches 95\% (19/20), with the one failure recovered by trial 2. The
+ceiling effect observed on the simple split persists entirely on the
+\texttt{multiple\_function} split, providing no signal for backend differentiation
+($p = \text{nan}$ for all Wilcoxon pairs at success@5). SW achieves the lowest
+mean token cost (966 tokens/task, \$0.0048/solved), but this advantage is
+attributable to task simplicity rather than retrieval efficiency. We discuss
+the benchmark selection implications in Section~\ref{sec:discussion}.
 
 \subsection{Sample Efficiency}
 
@@ -487,13 +488,14 @@ wrong output) was predicted to provide the largest advantage. A Linux or Docker
 environment is required to complete this evaluation.
 
 \paragraph{Tool-use benchmark difficulty.}
-The BFCL simple split exhibited a ceiling effect (100\% success@5 across all
-backends), providing no signal for backend differentiation. We address this in
-the current version by replacing it with the BFCL \texttt{multiple\_function}
-split, which requires disambiguation among similar function signatures. Whether
-even harder benchmarks (ToolBench G2/G3 multi-tool chains
-\citep{qin2023toolllm} or API-Bank \citep{li2023apibank}) are needed to
-further stress-test memory mechanisms remains an open question for future work.
+Both BFCL splits --- simple and \texttt{multiple\_function} --- exhibit a
+100\% success@5 ceiling across all backends, providing no signal for backend
+differentiation. The \texttt{multiple\_function} split (disambiguation among
+similar-signature candidates) is harder at success@1 for SQL-v2 (95\% vs.\
+100\%) but the five-attempt ceiling is identical. Harder benchmarks are
+required: ToolBench G2/G3 multi-tool chains \citep{qin2023toolllm} or
+API-Bank \citep{li2023apibank} involve sequential tool use and partial rewards
+that would create the graded signal needed to distinguish memory backends.
 
 \paragraph{Limited replications.}
 Primary results (GPT-4o, all domains) reflect one random seed per condition.

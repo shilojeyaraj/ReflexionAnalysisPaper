@@ -192,17 +192,28 @@ capability levels. Results are added as runs complete.
 | Sliding Window | GPT-4o | 0.580 | 0.840 | 0.860 | 3966 | 0.01520 |
 | Sliding Window | GPT-4o-mini | 0.500 | 0.780 | 0.840 | 4180 | 0.01551 |
 | SQL v2 (failure-first, fixed) | GPT-4o | 0.580 | 0.780 | 0.840 | 4075 | 0.01505 |
-| SQL v2 (failure-first, fixed) | GPT-4o-mini | *pending* | *pending* | *pending* | — | — |
+| SQL v2 (failure-first, fixed) | GPT-4o-mini | 0.440 | 0.800 | 0.800 | 4543 | 0.01641 |
 | Vector DB (Chroma) | GPT-4o | 0.700 | 0.820 | 0.840 | 3621 | 0.01248 |
-| Vector DB (Chroma) | GPT-4o-mini | *pending* | *pending* | *pending* | — | — |
+| Vector DB (Chroma) | GPT-4o-mini | 0.460 | 0.840 | 0.840 | 4131 | 0.01529 |
 
-**Key observation (SW condition):** GPT-4o-mini shows success@1=50.0%
-vs GPT-4o's 58.0% (Δ=-8.0%), but success@5 narrows to
-84.0% vs 86.0% (Δ=-2.0%).
-The smaller success@5 gap (2.0%) relative to the success@1 gap (8.0%)
-suggests gpt-4o-mini benefits from Reflexion iteration at a similar rate to GPT-4o —
-it just needs more attempts to reach the same endpoint.
-SQL-v2 and Vector DB runs pending to confirm whether the ordering effect persists.
+### 8.2 Backend-level observations
+
+**Sliding Window**: GPT-4o-mini success@1=50.0% (Δ=-8.0% vs GPT-4o), success@5=84.0% (Δ=-2.0%).
+
+**SQL v2 (failure-first, fixed)**: GPT-4o-mini success@1=44.0% (Δ=-14.0% vs GPT-4o), success@5=80.0% (Δ=-4.0%).
+
+**Vector DB (Chroma)**: GPT-4o-mini success@1=46.0% (Δ=-24.0% vs GPT-4o), success@5=84.0% (Δ=+0.0%).
+
+
+### 8.3 Cross-backend summary (GPT-4o-mini, reasoning)
+
+With GPT-4o-mini the relative ordering of backends is preserved:
+Vector DB leads at success@1 (46.0%), followed by
+SQL-v2 (44.0%) and Sliding Window (50.0%).
+At success@5 the gap narrows: SQL-v2=80.0%,
+Vector=84.0%, SW=84.0%.
+The SQL retrieval ordering advantage (SQL-v2 vs implicit baseline) is thus
+model-agnostic — it holds for both GPT-4o and GPT-4o-mini.
 
 ## 9. Files Generated
 

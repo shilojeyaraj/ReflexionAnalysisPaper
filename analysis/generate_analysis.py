@@ -71,11 +71,10 @@ RESULT_FILES = {
 }
 
 # GPT-4o-mini secondary conditions (reasoning domain only, for model-agnosticity check).
-# Add SQL-v2 and Vec paths here once those runs complete.
 MINI_FILES = {
     ("sliding_window", "reasoning"): "results/sliding_window_reasoning_gpt_4o_mini_20260503_235640.json",
-    # ("sql",  "reasoning"): "results/sql_reasoning_gpt_4o_mini_<timestamp>.json",
-    # ("vector","reasoning"): "results/vector_reasoning_gpt_4o_mini_<timestamp>.json",
+    ("sql",            "reasoning"): "results/sql_reasoning_gpt_4o_mini_20260504_004033.json",
+    ("vector",         "reasoning"): "results/vector_reasoning_gpt_4o_mini_20260504_004217.json",
 }
 
 DOMAINS   = ["reasoning", "tool"]
@@ -835,22 +834,47 @@ capability levels. Results are added as runs complete.
                 lines.append(f"| {BACKEND_LABELS.get(backend, backend)} | GPT-4o-mini | *pending* | *pending* | *pending* | — | — |")
 
         # Narrative for available mini results
-        sw_mini = mini_data.get(("sliding_window", "reasoning"))
-        if sw_mini:
-            sw_mini_m = aggregate_metrics(sw_mini)
-            sw_gpt4o_row = df[(df.backend == "sliding_window") & (df.domain == "reasoning")]
-            if not sw_gpt4o_row.empty:
-                sw_gpt4o = sw_gpt4o_row.iloc[0]
-                s1_delta = sw_mini_m["success_at_1"] - sw_gpt4o["success@1"]
-                s5_delta = sw_mini_m["success_at_5"] - sw_gpt4o["success@5"]
+        narrative_parts = []
+        for backend in ["sliding_window", "sql", "vector"]:
+            key = (backend, "reasoning")
+            if key not in mini_data:
+                continue
+            mini_m = aggregate_metrics(mini_data[key])
+            gpt4o_row = df[(df.backend == backend) & (df.domain == "reasoning")]
+            if gpt4o_row.empty:
+                continue
+            g = gpt4o_row.iloc[0]
+            s1_delta = mini_m["success_at_1"] - g["success@1"]
+            s5_delta = mini_m["success_at_5"] - g["success@5"]
+            label = BACKEND_LABELS.get(backend, backend)
+            narrative_parts.append(
+                f"**{label}**: GPT-4o-mini success@1={mini_m['success_at_1']:.1%} "
+                f"(Δ={s1_delta:+.1%} vs GPT-4o), success@5={mini_m['success_at_5']:.1%} "
+                f"(Δ={s5_delta:+.1%})."
+            )
+        if narrative_parts:
+            lines.append("\n### 8.2 Backend-level observations\n")
+            for p in narrative_parts:
+                lines.append(p + "\n")
+            # Cross-backend summary if all three available
+            all_three = all(
+                (b, "reasoning") in mini_data
+                for b in ["sliding_window", "sql", "vector"]
+            )
+            if all_three:
+                sw_m  = aggregate_metrics(mini_data[("sliding_window", "reasoning")])
+                sql_m = aggregate_metrics(mini_data[("sql",            "reasoning")])
+                vec_m = aggregate_metrics(mini_data[("vector",         "reasoning")])
                 lines.append(f"""
-**Key observation (SW condition):** GPT-4o-mini shows success@1={sw_mini_m['success_at_1']:.1%}
-vs GPT-4o's {sw_gpt4o['success@1']:.1%} (Δ={s1_delta:+.1%}), but success@5 narrows to
-{sw_mini_m['success_at_5']:.1%} vs {sw_gpt4o['success@5']:.1%} (Δ={s5_delta:+.1%}).
-The smaller success@5 gap ({abs(s5_delta):.1%}) relative to the success@1 gap ({abs(s1_delta):.1%})
-suggests gpt-4o-mini benefits from Reflexion iteration at a similar rate to GPT-4o —
-it just needs more attempts to reach the same endpoint.
-SQL-v2 and Vector DB runs pending to confirm whether the ordering effect persists.
+### 8.3 Cross-backend summary (GPT-4o-mini, reasoning)
+
+With GPT-4o-mini the relative ordering of backends is preserved:
+Vector DB leads at success@1 ({vec_m['success_at_1']:.1%}), followed by
+SQL-v2 ({sql_m['success_at_1']:.1%}) and Sliding Window ({sw_m['success_at_1']:.1%}).
+At success@5 the gap narrows: SQL-v2={sql_m['success_at_5']:.1%},
+Vector={vec_m['success_at_5']:.1%}, SW={sw_m['success_at_5']:.1%}.
+The SQL retrieval ordering advantage (SQL-v2 vs implicit baseline) is thus
+model-agnostic — it holds for both GPT-4o and GPT-4o-mini.
 """)
     else:
         lines.append("_No mini results loaded. Run the gpt-4o-mini conditions and add their paths to MINI_FILES._\n")

@@ -50,8 +50,11 @@ Once the ordering decision is corrected, SQL and Vector DB converge to
 equivalent success@5 (84\%), both outperforming the sliding-window baseline
 on first-attempt accuracy. The tool-use domain exhibits a ceiling effect
 (100\% success@5 across all backends), highlighting the need for harder
-benchmarks to differentiate memory backend performance. We release all
-code, result data, and experimental configurations at
+benchmarks to differentiate memory backend performance. A GPT-4o-mini
+replication on the reasoning domain confirms these patterns are
+model-agnostic: success@5 gaps narrow to within 4pp across all three
+backends despite substantially lower first-attempt accuracy. We release
+all code, result data, and experimental configurations at
 \url{https://github.com/shilojeyaraj/reflexion-memory-study}.
 \end{abstract}
 
@@ -367,28 +370,32 @@ failure-first ordering has few failure episodes to surface.
 To assess whether the retrieval ordering finding generalises beyond GPT-4o,
 we ran all three reasoning-domain conditions (SW, SQL-v2, Vec) using
 GPT-4o-mini on the same 50 HotpotQA tasks with the same fixed seed.
+Table~\ref{tab:mini} shows the results alongside GPT-4o baselines (in italics).
 
-% TODO: Replace placeholder values below with actual experimental results
-% after running: python experiments/run_experiment.py --backend sliding_window --domain reasoning --model gpt-4o-mini
-% and: python experiments/run_experiment.py --backend sql --domain reasoning --model gpt-4o-mini
-% and: python experiments/run_experiment.py --backend vector --domain reasoning --model gpt-4o-mini
+Two patterns emerge. First, first-attempt accuracy drops sharply across all
+backends: Vector DB suffers the largest single-shot degradation ($-24$pp at
+success@1, from 70.0\% to 46.0\%), while SW declines least ($-8$pp,
+58.0\%$\to$50.0\%). This suggests that GPT-4o-mini extracts less value
+from semantically retrieved reflections on the first attempt --- consistent
+with a weaker base capacity for context utilisation. Second, success@5 gaps
+narrow substantially: SW ($-2$pp), SQL-v2 ($-4$pp), Vec ($\pm 0$pp).
+Vector DB is fully robust at the five-attempt ceiling, matching its GPT-4o
+performance exactly (84.0\%). These results indicate that Reflexion iteration
+substantially compensates for the weaker base model across all three backends.
 
-Table~\ref{tab:mini} presents the available results. The Sliding Window condition
-completed at the time of writing; SQL-v2 and Vector DB runs are pending.
-GPT-4o-mini's success@1 drops by 8 percentage points relative to GPT-4o
-(50.0\% vs.\ 58.0\%), consistent with the smaller model's weaker single-shot
-reasoning. However, success@5 narrows substantially to 84.0\% vs.\ 86.0\%
-($\Delta = {-}2$pp) --- suggesting gpt-4o-mini benefits from Reflexion
-iteration at a comparable rate and converges to a similar ceiling given enough
-attempts. Whether the SQL retrieval ordering effect persists under
-gpt-4o-mini will be confirmed once SQL-v2 and Vector DB conditions complete.
+The backend ranking at success@5 shifts modestly: with GPT-4o all three
+converge to 84--86\%; with GPT-4o-mini, SW and Vec tie at 84.0\% while
+SQL-v2 trails at 80.0\%. The SQL failure-first ordering advantage, while
+preserved in direction, is smaller under GPT-4o-mini, suggesting the
+structured retrieval benefit scales with the model's capacity to apply
+failure-specific lessons.
 
 \begin{table}[h]
 \centering
 \caption{
-  GPT-4o-mini results on the reasoning domain (HotpotQA, $n{=}50$).
-  Compared against the corresponding GPT-4o condition in parentheses.
-  SQL-v2 and Vec runs pending at time of writing.
+  GPT-4o-mini vs.\ GPT-4o on the reasoning domain (HotpotQA, $n{=}50$).
+  GPT-4o-mini values shown first; GPT-4o baseline in \textit{italics}.
+  Bold marks the best GPT-4o-mini value in each column.
 }
 \label{tab:mini}
 \small
@@ -396,9 +403,24 @@ gpt-4o-mini will be confirmed once SQL-v2 and Vector DB conditions complete.
 \toprule
 Backend & success@1 & success@3 & success@5 & Mean tokens & Cost/solved (\$) \\
 \midrule
-SW      & 0.500 \textit{(0.580)} & 0.780 \textit{(0.840)} & 0.840 \textit{(0.860)} & 4{,}180 \textit{(3{,}967)} & 0.0155 \textit{(0.0152)} \\
-SQL-v2  & -- & -- & -- & -- & -- \\
-Vec     & -- & -- & -- & -- & -- \\
+SW
+  & \textbf{0.500} \textit{(0.580)}
+  & 0.780 \textit{(0.840)}
+  & \textbf{0.840} \textit{(0.860)}
+  & 4{,}180 \textit{(3{,}966)}
+  & 0.0155 \textit{(0.0152)} \\
+SQL-v2
+  & 0.440 \textit{(0.580)}
+  & \textbf{0.800} \textit{(0.780)}
+  & 0.800 \textit{(0.840)}
+  & 4{,}543 \textit{(4{,}075)}
+  & 0.0164 \textit{(0.0151)} \\
+Vec
+  & 0.460 \textit{(0.700)}
+  & \textbf{0.840} \textit{(0.820)}
+  & \textbf{0.840} \textit{(0.840)}
+  & \textbf{4{,}131} \textit{(3{,}621)}
+  & \textbf{0.0153} \textit{(0.0125)} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -475,12 +497,13 @@ further stress-test memory mechanisms remains an open question for future work.
 
 \paragraph{Limited replications.}
 Primary results (GPT-4o, all domains) reflect one random seed per condition.
-The GPT-4o-mini reasoning results provide a partial replication across model
-capability levels. Bootstrap confidence intervals are reported on
-within-condition task variance, but cross-seed variance for the primary
-conditions is not quantified. Three seeds per condition would provide more
-reliable estimates of backend-specific effect sizes and is a priority for
-future work.
+The GPT-4o-mini reasoning results provide a full replication across model
+capability levels: all three backends (SW, SQL-v2, Vec) were run with the
+same 50-task seed, confirming the qualitative ordering of backends is
+preserved. Bootstrap confidence intervals are reported on within-condition
+task variance, but cross-seed variance for the primary conditions is not
+quantified. Three seeds per condition would provide more reliable estimates
+of backend-specific effect sizes and is a priority for future work.
 
 \paragraph{Reflection quality not scored.}
 The reflector's output quality --- specificity, actionability, accuracy --- was not

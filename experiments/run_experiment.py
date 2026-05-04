@@ -214,6 +214,13 @@ def main() -> None:
         action="store_true",
         help="Pre-populate DB with a 20-task warm-up run before the main experiment.",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+        help="OpenAI model to use for actor and reflector. Overrides OPENAI_MODEL env var. Default: gpt-4o",
+    )
     args = parser.parse_args()
 
     load_dotenv()
@@ -222,6 +229,11 @@ def main() -> None:
     config["memory_backend"] = args.backend
 
     n_tasks = args.n_tasks or config.get("max_tasks", 50)
+
+    # --model flag overrides OPENAI_MODEL env var; env var overrides "gpt-4o" default
+    model_name = args.model or os.getenv("OPENAI_MODEL", "gpt-4o")
+    # Normalise for use in filenames (replace - with _ for cleaner names)
+    model_slug = model_name.replace("-", "_")
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(args.output_dir)
@@ -240,7 +252,7 @@ def main() -> None:
     print(f"  Tasks / domain: {effective_n}{'  (DRY RUN)' if args.dry_run else ''}")
     print(f"  Max trials   : {config.get('max_trials', 5)}")
     print(f"  Reflection k : {config.get('reflection_k', 3)}")
-    print(f"  Model        : {os.getenv('OPENAI_MODEL', 'gpt-4o')}")
+    print(f"  Model        : {model_name}")
     print(f"  Output dir   : {output_dir.resolve()}")
     print(f"  Log file     : {log_path}")
     if args.score_reflections:
@@ -264,11 +276,11 @@ def main() -> None:
         warmup_domain = domains_to_run[0]
         warmup_env = make_env(warmup_domain, config)
         warmup_actor = Actor(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            model=model_name,
             memory=memory,
             domain=warmup_domain,
         )
-        warmup_reflector = Reflector(model=config.get("judge_model", "gpt-4o"))
+        warmup_reflector = Reflector(model=model_name)
         warmup_config = dict(config, seed=config.get("seed", 42) + 1000, max_trials=2)
         run_domain(
             warmup_domain, warmup_actor, warmup_reflector,
@@ -285,11 +297,11 @@ def main() -> None:
 
         env = make_env(domain, config)
         actor = Actor(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            model=model_name,
             memory=memory,
             domain=domain,
         )
-        reflector = Reflector(model=config.get("judge_model", "gpt-4o"))
+        reflector = Reflector(model=model_name)
 
         results = run_domain(
             domain, actor, reflector, env, memory, config, n_tasks, args.dry_run
@@ -299,8 +311,11 @@ def main() -> None:
         domain_elapsed = (datetime.datetime.now() - domain_start).seconds
         logger.info("Domain %s complete in %ds.", domain, domain_elapsed)
 
-        # Save per-domain results immediately
-        result_path = output_dir / f"{args.backend}_{domain}_{timestamp}.json"
+        # Save per-domain results — include model slug when non-default
+        if model_slug == "gpt_4o":
+            result_path = output_dir / f"{args.backend}_{domain}_{timestamp}.json"
+        else:
+            result_path = output_dir / f"{args.backend}_{domain}_{model_slug}_{timestamp}.json"
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
         logger.info("Saved %d results to %s", len(results), result_path)

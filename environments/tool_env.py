@@ -18,7 +18,7 @@ import logging
 import random
 
 from environments.base_env import BaseEnvironment
-from environments.bfcl_lite import TASKS, check_function_call, decode_function_call
+from environments.bfcl_lite import MULTIPLE_TASKS, TASKS, check_function_call, decode_function_call
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ default_decode_ast_prompting = None
 
 TOOLS_DESCRIPTION = """
 You are a function-calling assistant. For each user request you will be given
-one or more function schemas. Your job is to call the correct function with
+one or more function schemas. Your job is to call the CORRECT function with
 the correct arguments.
 
 Response format — Python function call syntax (REQUIRED):
@@ -38,6 +38,8 @@ Response format — Python function call syntax (REQUIRED):
 
 Rules:
 - Call exactly one function
+- Read ALL available function descriptions carefully before choosing — similar
+  names may serve different purposes (e.g. get_weather_current vs get_weather_forecast)
 - Match the function name exactly as given in the schema
 - Use keyword arguments (param=value), not positional
 - String values must be quoted: city="New York"
@@ -46,7 +48,7 @@ Rules:
 - Do not add any explanation — output only the function call
 
 Example:
-    get_weather(city="London", unit="celsius")
+    get_weather_current(city="London", unit="celsius")
 """
 
 
@@ -61,14 +63,26 @@ class ToolEnvironment(BaseEnvironment):
     """
     Function-calling tool-use environment backed by bfcl_lite.
 
-    40 bundled simple_python-style tasks. Evaluation uses Python's
-    built-in ast module — no network, no compiler, no external packages.
+    Supports two splits:
+      - "simple"           — 40 single-function tasks (one schema per task)
+      - "multiple_function" — 20 disambiguation tasks (3 similar schemas per task)
+
+    Config key: bfcl_split (default: "multiple_function")
+    Evaluation uses Python's built-in ast module — no network, no compiler.
     """
 
     def __init__(self, config: dict | None = None) -> None:
         self._config = config or {}
-        self._tasks = TASKS
-        logger.info("ToolEnvironment initialised with %d bundled tasks.", len(self._tasks))
+        split = self._config.get("bfcl_split", "multiple_function")
+        if split == "multiple_function":
+            self._tasks = MULTIPLE_TASKS
+        else:
+            self._tasks = TASKS
+        self._split = split
+        logger.info(
+            "ToolEnvironment initialised: split=%s, %d bundled tasks.",
+            split, len(self._tasks),
+        )
 
     def get_tasks(self, n: int, seed: int) -> list[dict]:
         """
@@ -76,6 +90,7 @@ class ToolEnvironment(BaseEnvironment):
 
         Returns task dicts with keys:
             task_id, description, functions, ground_truth
+            (multiple_function split also includes: candidate_functions)
         """
         rng = random.Random(seed)
         sampled = rng.sample(self._tasks, min(n, len(self._tasks)))
@@ -83,16 +98,26 @@ class ToolEnvironment(BaseEnvironment):
         tasks = []
         for entry in sampled:
             schema_text = _format_function_schemas(entry["function"])
-            description = (
-                f"Task: {entry['question']}\n\n"
-                f"Available functions:\n{schema_text}"
-            )
-            tasks.append({
+            if self._split == "multiple_function":
+                description = (
+                    f"Task: {entry['question']}\n\n"
+                    f"Available functions (choose carefully — "
+                    f"select the one that best matches the request):\n{schema_text}"
+                )
+            else:
+                description = (
+                    f"Task: {entry['question']}\n\n"
+                    f"Available functions:\n{schema_text}"
+                )
+            task_dict = {
                 "task_id":      entry["task_id"],
                 "description":  description,
                 "functions":    entry["function"],
                 "ground_truth": entry["ground_truth"],
-            })
+            }
+            if self._split == "multiple_function":
+                task_dict["candidate_functions"] = [f["name"] for f in entry["function"]]
+            tasks.append(task_dict)
         return tasks
 
     def step(self, task: dict, response: str) -> tuple[float, bool, str, str]:

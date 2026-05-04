@@ -44,7 +44,8 @@ TOOL_ACTOR_SYSTEM = """You are a function-calling assistant. Your task is to cal
 {past_reflections_section}
 
 Instructions:
-- Read the available function schemas and the user query carefully
+- Read ALL available function schemas carefully before choosing — similar-sounding
+  functions serve different purposes (e.g. get_weather_current vs get_weather_forecast)
 - Output EXACTLY ONE function call in Python syntax: function_name(param=value, ...)
 - Use the exact function name from the schema — spelling and case must match
 - Use keyword arguments only: city="London" not just "London"
@@ -53,8 +54,9 @@ Instructions:
 - Do NOT add any explanation, preamble, or text — output only the function call
 - If you have past lessons available above, explicitly state which lesson you are applying before the function call
 
+{candidate_section}
 Example of correct output:
-    get_weather(city="New York", unit="celsius")"""
+    get_weather_current(city="New York", unit="celsius")"""
 
 def _build_past_reflections_section(reflections: list[dict]) -> str:
     """Format retrieved episodes into a numbered lessons section."""
@@ -177,11 +179,19 @@ class Actor:
             response_text = response.choices[0].message.content or ""
 
         elif self.domain == "tool":
-            # BFCL tool domain: agent responds in Python function call syntax
-            # e.g. calculate_triangle_area(base=10, height=5)
-            # No OpenAI function_call API needed — plain text completion
+            # Build optional candidate-function disambiguation hint
+            candidates = task.get("candidate_functions", [])
+            if candidates:
+                candidate_section = (
+                    "Available functions (choose carefully):\n"
+                    + "\n".join(f"  - {c}" for c in candidates)
+                    + "\n"
+                )
+            else:
+                candidate_section = ""
             system_content = TOOL_ACTOR_SYSTEM.format(
                 past_reflections_section=past_section,
+                candidate_section=candidate_section,
             )
             response = self._client.chat.completions.create(
                 model=self._model,

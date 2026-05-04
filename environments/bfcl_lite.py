@@ -9,14 +9,16 @@ Why we dropped bfcl-eval:
   - Requires tree-sitter==0.21.3 (no Python 3.13 wheel, needs MSVC compiler)
   - Installs 25+ unrelated provider SDKs (anthropic, cohere, mistralai, boto3…)
 
-This module provides the same three things we actually need:
+This module provides the same things we need:
   1. decode_function_call()  — parse "func(a=1, b=2)" → [{func: {a:1, b:2}}]
   2. check_function_call()   — validate parsed call against ground truth spec
-  3. TASKS                   — 40 bundled simple_python function-calling tasks
+  3. TASKS                   — 40 bundled simple_python tasks
+  4. MULTIPLE_TASKS          — 20 bundled multiple_function tasks (disambiguation)
 
-The error_type vocabulary is identical to what bfcl-eval produced:
+Error type vocabulary:
   success | wrong_func_name | missing_required_param |
-  wrong_arg_type | wrong_arg_value | no_function_call | bad_arguments
+  wrong_arg_type | wrong_arg_value | no_function_call | bad_arguments |
+  ambiguous_selection  (chose a candidate function, but the wrong one)
 """
 
 import ast
@@ -128,13 +130,25 @@ def check_function_call(
     # ── Check function name ─────────────────────────────────────────────
     expected_funcs = [next(iter(gt)) for gt in ground_truth]
     if actual_func not in expected_funcs:
-        return {
-            "valid": False,
-            "error": [
+        # Distinguish ambiguous_selection (called a real candidate, wrong one)
+        # from wrong_func_name (called something not in the candidate set at all)
+        candidate_names = [f.get("name") for f in func_description if f.get("name")]
+        if actual_func in candidate_names:
+            error_type = "ambiguous_selection"
+            error_msg = (
+                f"Selected wrong function from candidates: got '{actual_func}', "
+                f"correct function is one of {expected_funcs}"
+            )
+        else:
+            error_type = "wrong_func_name"
+            error_msg = (
                 f"Wrong function name: got '{actual_func}', "
                 f"expected one of {expected_funcs}"
-            ],
-            "error_type": "wrong_func_name",
+            )
+        return {
+            "valid": False,
+            "error": [error_msg],
+            "error_type": error_type,
         }
 
     # Use the matching ground-truth entry
@@ -691,5 +705,521 @@ TASKS: list[dict] = [
         "ground_truth": [{"hash_string": {
             "text": ["password123"],
             "algorithm": ["sha256", "SHA-256", "sha-256"]}}],
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# multiple_function tasks — agent must select one correct function from a set
+# of similar candidates. Tests disambiguation (ambiguous_selection error type).
+# ---------------------------------------------------------------------------
+
+MULTIPLE_TASKS: list[dict] = [
+    # ── Weather variants ────────────────────────────────────────────────
+    {
+        "task_id": "multi_0",
+        "question": "What is the current temperature in Paris right now?",
+        "function": [
+            {"name": "get_weather_current",
+             "description": "Get the current real-time weather for a city.",
+             "parameters": {"type": "dict", "properties": {
+                 "city": {"type": "string"},
+                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}},
+                 "required": ["city", "unit"]}},
+            {"name": "get_weather_forecast",
+             "description": "Get a multi-day weather forecast for a city.",
+             "parameters": {"type": "dict", "properties": {
+                 "city": {"type": "string"},
+                 "days": {"type": "integer"},
+                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}},
+                 "required": ["city", "days", "unit"]}},
+            {"name": "get_weather_historical",
+             "description": "Get historical weather data for a city on a past date.",
+             "parameters": {"type": "dict", "properties": {
+                 "city": {"type": "string"},
+                 "date": {"type": "string"},
+                 "unit": {"type": "string"}},
+                 "required": ["city", "date", "unit"]}},
+        ],
+        "ground_truth": [{"get_weather_current": {"city": ["Paris"], "unit": ["celsius", "fahrenheit"]}}],
+    },
+    {
+        "task_id": "multi_1",
+        "question": "What will the weather be like in Tokyo over the next 5 days?",
+        "function": [
+            {"name": "get_weather_current",
+             "description": "Get the current real-time weather for a city.",
+             "parameters": {"type": "dict", "properties": {
+                 "city": {"type": "string"},
+                 "unit": {"type": "string"}},
+                 "required": ["city", "unit"]}},
+            {"name": "get_weather_forecast",
+             "description": "Get a multi-day weather forecast for a city.",
+             "parameters": {"type": "dict", "properties": {
+                 "city": {"type": "string"},
+                 "days": {"type": "integer"},
+                 "unit": {"type": "string"}},
+                 "required": ["city", "days", "unit"]}},
+            {"name": "get_weather_historical",
+             "description": "Get historical weather data for a city on a past date.",
+             "parameters": {"type": "dict", "properties": {
+                 "city": {"type": "string"},
+                 "date": {"type": "string"},
+                 "unit": {"type": "string"}},
+                 "required": ["city", "date", "unit"]}},
+        ],
+        "ground_truth": [{"get_weather_forecast": {"city": ["Tokyo"], "days": [5], "unit": ["celsius", "fahrenheit"]}}],
+    },
+    # ── Search variants ─────────────────────────────────────────────────
+    {
+        "task_id": "multi_2",
+        "question": "Search for recent news articles about climate change.",
+        "function": [
+            {"name": "search_news",
+             "description": "Search for news articles by keyword.",
+             "parameters": {"type": "dict", "properties": {
+                 "query":    {"type": "string"},
+                 "max_results": {"type": "integer"}},
+                 "required": ["query"]}},
+            {"name": "search_web",
+             "description": "Perform a general web search.",
+             "parameters": {"type": "dict", "properties": {
+                 "query": {"type": "string"},
+                 "page":  {"type": "integer"}},
+                 "required": ["query"]}},
+            {"name": "search_academic",
+             "description": "Search academic papers and research publications.",
+             "parameters": {"type": "dict", "properties": {
+                 "query":     {"type": "string"},
+                 "year_from": {"type": "integer"}},
+                 "required": ["query"]}},
+        ],
+        "ground_truth": [{"search_news": {"query": ["climate change"]}}],
+    },
+    {
+        "task_id": "multi_3",
+        "question": "Find peer-reviewed papers on transformer architectures published after 2020.",
+        "function": [
+            {"name": "search_news",
+             "description": "Search for news articles by keyword.",
+             "parameters": {"type": "dict", "properties": {
+                 "query": {"type": "string"}},
+                 "required": ["query"]}},
+            {"name": "search_web",
+             "description": "Perform a general web search.",
+             "parameters": {"type": "dict", "properties": {
+                 "query": {"type": "string"}},
+                 "required": ["query"]}},
+            {"name": "search_academic",
+             "description": "Search academic papers and research publications.",
+             "parameters": {"type": "dict", "properties": {
+                 "query":     {"type": "string"},
+                 "year_from": {"type": "integer"}},
+                 "required": ["query"]}},
+        ],
+        "ground_truth": [{"search_academic": {"query": ["transformer architectures", "transformers"], "year_from": [2020, 2021]}}],
+    },
+    # ── File operations ─────────────────────────────────────────────────
+    {
+        "task_id": "multi_4",
+        "question": "Read the contents of the file at '/data/report.csv'.",
+        "function": [
+            {"name": "read_file",
+             "description": "Read a file from disk and return its text contents.",
+             "parameters": {"type": "dict", "properties": {
+                 "path":     {"type": "string"},
+                 "encoding": {"type": "string"}},
+                 "required": ["path"]}},
+            {"name": "write_file",
+             "description": "Write content to a file on disk.",
+             "parameters": {"type": "dict", "properties": {
+                 "path":    {"type": "string"},
+                 "content": {"type": "string"}},
+                 "required": ["path", "content"]}},
+            {"name": "delete_file",
+             "description": "Delete a file from disk.",
+             "parameters": {"type": "dict", "properties": {
+                 "path": {"type": "string"}},
+                 "required": ["path"]}},
+        ],
+        "ground_truth": [{"read_file": {"path": ["/data/report.csv"]}}],
+    },
+    {
+        "task_id": "multi_5",
+        "question": "Remove the file '/tmp/cache.log' from disk.",
+        "function": [
+            {"name": "read_file",
+             "description": "Read a file from disk and return its text contents.",
+             "parameters": {"type": "dict", "properties": {
+                 "path": {"type": "string"}},
+                 "required": ["path"]}},
+            {"name": "write_file",
+             "description": "Write content to a file on disk.",
+             "parameters": {"type": "dict", "properties": {
+                 "path":    {"type": "string"},
+                 "content": {"type": "string"}},
+                 "required": ["path", "content"]}},
+            {"name": "delete_file",
+             "description": "Delete a file from disk.",
+             "parameters": {"type": "dict", "properties": {
+                 "path": {"type": "string"}},
+                 "required": ["path"]}},
+        ],
+        "ground_truth": [{"delete_file": {"path": ["/tmp/cache.log"]}}],
+    },
+    # ── User / account operations ────────────────────────────────────────
+    {
+        "task_id": "multi_6",
+        "question": "Get the profile information for user with ID 42.",
+        "function": [
+            {"name": "get_user_profile",
+             "description": "Retrieve a user's profile by user ID.",
+             "parameters": {"type": "dict", "properties": {
+                 "user_id": {"type": "integer"}},
+                 "required": ["user_id"]}},
+            {"name": "update_user_profile",
+             "description": "Update fields on a user's profile.",
+             "parameters": {"type": "dict", "properties": {
+                 "user_id": {"type": "integer"},
+                 "fields":  {"type": "string"}},
+                 "required": ["user_id", "fields"]}},
+            {"name": "delete_user",
+             "description": "Permanently delete a user account.",
+             "parameters": {"type": "dict", "properties": {
+                 "user_id": {"type": "integer"}},
+                 "required": ["user_id"]}},
+        ],
+        "ground_truth": [{"get_user_profile": {"user_id": [42]}}],
+    },
+    {
+        "task_id": "multi_7",
+        "question": "Change the email address on user 17's profile to 'new@example.com'.",
+        "function": [
+            {"name": "get_user_profile",
+             "description": "Retrieve a user's profile by user ID.",
+             "parameters": {"type": "dict", "properties": {
+                 "user_id": {"type": "integer"}},
+                 "required": ["user_id"]}},
+            {"name": "update_user_profile",
+             "description": "Update fields on a user's profile. Fields as JSON string.",
+             "parameters": {"type": "dict", "properties": {
+                 "user_id": {"type": "integer"},
+                 "fields":  {"type": "string", "description": "JSON of fields to update"}},
+                 "required": ["user_id", "fields"]}},
+            {"name": "delete_user",
+             "description": "Permanently delete a user account.",
+             "parameters": {"type": "dict", "properties": {
+                 "user_id": {"type": "integer"}},
+                 "required": ["user_id"]}},
+        ],
+        "ground_truth": [{"update_user_profile": {
+            "user_id": [17],
+            "fields": ['{"email": "new@example.com"}', '{"email":"new@example.com"}']}}],
+    },
+    # ── Database / query variants ────────────────────────────────────────
+    {
+        "task_id": "multi_8",
+        "question": "Count the number of records in the 'orders' table.",
+        "function": [
+            {"name": "db_count",
+             "description": "Count rows in a database table.",
+             "parameters": {"type": "dict", "properties": {
+                 "table": {"type": "string"}},
+                 "required": ["table"]}},
+            {"name": "db_query",
+             "description": "Execute a raw SQL SELECT query.",
+             "parameters": {"type": "dict", "properties": {
+                 "sql": {"type": "string"}},
+                 "required": ["sql"]}},
+            {"name": "db_insert",
+             "description": "Insert a new row into a database table.",
+             "parameters": {"type": "dict", "properties": {
+                 "table": {"type": "string"},
+                 "data":  {"type": "string"}},
+                 "required": ["table", "data"]}},
+        ],
+        "ground_truth": [{"db_count": {"table": ["orders"]}}],
+    },
+    {
+        "task_id": "multi_9",
+        "question": "Run the SQL query 'SELECT * FROM products WHERE price < 50'.",
+        "function": [
+            {"name": "db_count",
+             "description": "Count rows in a database table.",
+             "parameters": {"type": "dict", "properties": {
+                 "table": {"type": "string"}},
+                 "required": ["table"]}},
+            {"name": "db_query",
+             "description": "Execute a raw SQL SELECT query.",
+             "parameters": {"type": "dict", "properties": {
+                 "sql": {"type": "string"}},
+                 "required": ["sql"]}},
+            {"name": "db_insert",
+             "description": "Insert a new row into a database table.",
+             "parameters": {"type": "dict", "properties": {
+                 "table": {"type": "string"},
+                 "data":  {"type": "string"}},
+                 "required": ["table", "data"]}},
+        ],
+        "ground_truth": [{"db_query": {"sql": ["SELECT * FROM products WHERE price < 50"]}}],
+    },
+    # ── Send / notify variants ───────────────────────────────────────────
+    {
+        "task_id": "multi_10",
+        "question": "Send an email to 'bob@example.com' with subject 'Meeting reminder'.",
+        "function": [
+            {"name": "send_email",
+             "description": "Send an email message.",
+             "parameters": {"type": "dict", "properties": {
+                 "to":      {"type": "string"},
+                 "subject": {"type": "string"},
+                 "body":    {"type": "string"}},
+                 "required": ["to", "subject"]}},
+            {"name": "send_sms",
+             "description": "Send an SMS text message.",
+             "parameters": {"type": "dict", "properties": {
+                 "phone_number": {"type": "string"},
+                 "message":      {"type": "string"}},
+                 "required": ["phone_number", "message"]}},
+            {"name": "send_push_notification",
+             "description": "Send a push notification to a device.",
+             "parameters": {"type": "dict", "properties": {
+                 "device_id": {"type": "string"},
+                 "title":     {"type": "string"},
+                 "body":      {"type": "string"}},
+                 "required": ["device_id", "title"]}},
+        ],
+        "ground_truth": [{"send_email": {"to": ["bob@example.com"], "subject": ["Meeting reminder"]}}],
+    },
+    {
+        "task_id": "multi_11",
+        "question": "Text the number +1-555-1234 with the message 'Your code is 4821'.",
+        "function": [
+            {"name": "send_email",
+             "description": "Send an email message.",
+             "parameters": {"type": "dict", "properties": {
+                 "to":      {"type": "string"},
+                 "subject": {"type": "string"}},
+                 "required": ["to", "subject"]}},
+            {"name": "send_sms",
+             "description": "Send an SMS text message.",
+             "parameters": {"type": "dict", "properties": {
+                 "phone_number": {"type": "string"},
+                 "message":      {"type": "string"}},
+                 "required": ["phone_number", "message"]}},
+            {"name": "send_push_notification",
+             "description": "Send a push notification to a device.",
+             "parameters": {"type": "dict", "properties": {
+                 "device_id": {"type": "string"},
+                 "title":     {"type": "string"}},
+                 "required": ["device_id", "title"]}},
+        ],
+        "ground_truth": [{"send_sms": {
+            "phone_number": ["+1-555-1234", "+15551234"],
+            "message": ["Your code is 4821"]}}],
+    },
+    # ── Calendar / scheduling ────────────────────────────────────────────
+    {
+        "task_id": "multi_12",
+        "question": "Create a new calendar event called 'Team standup' on 2024-09-15 at 09:00.",
+        "function": [
+            {"name": "create_calendar_event",
+             "description": "Create a new calendar event.",
+             "parameters": {"type": "dict", "properties": {
+                 "title": {"type": "string"},
+                 "date":  {"type": "string"},
+                 "time":  {"type": "string"}},
+                 "required": ["title", "date"]}},
+            {"name": "get_calendar_events",
+             "description": "List calendar events for a given date.",
+             "parameters": {"type": "dict", "properties": {
+                 "date": {"type": "string"}},
+                 "required": ["date"]}},
+            {"name": "delete_calendar_event",
+             "description": "Delete a calendar event by its ID.",
+             "parameters": {"type": "dict", "properties": {
+                 "event_id": {"type": "string"}},
+                 "required": ["event_id"]}},
+        ],
+        "ground_truth": [{"create_calendar_event": {
+            "title": ["Team standup"],
+            "date":  ["2024-09-15"],
+            "time":  ["09:00", "9:00"]}}],
+    },
+    {
+        "task_id": "multi_13",
+        "question": "What events are scheduled for 2024-09-20?",
+        "function": [
+            {"name": "create_calendar_event",
+             "description": "Create a new calendar event.",
+             "parameters": {"type": "dict", "properties": {
+                 "title": {"type": "string"},
+                 "date":  {"type": "string"}},
+                 "required": ["title", "date"]}},
+            {"name": "get_calendar_events",
+             "description": "List calendar events for a given date.",
+             "parameters": {"type": "dict", "properties": {
+                 "date": {"type": "string"}},
+                 "required": ["date"]}},
+            {"name": "delete_calendar_event",
+             "description": "Delete a calendar event by its ID.",
+             "parameters": {"type": "dict", "properties": {
+                 "event_id": {"type": "string"}},
+                 "required": ["event_id"]}},
+        ],
+        "ground_truth": [{"get_calendar_events": {"date": ["2024-09-20"]}}],
+    },
+    # ── Payment / order variants ─────────────────────────────────────────
+    {
+        "task_id": "multi_14",
+        "question": "Charge $49.99 to payment method 'pm_abc123'.",
+        "function": [
+            {"name": "charge_payment",
+             "description": "Charge a payment method a specified amount.",
+             "parameters": {"type": "dict", "properties": {
+                 "payment_method_id": {"type": "string"},
+                 "amount":            {"type": "number"},
+                 "currency":          {"type": "string"}},
+                 "required": ["payment_method_id", "amount"]}},
+            {"name": "refund_payment",
+             "description": "Refund a previously completed charge.",
+             "parameters": {"type": "dict", "properties": {
+                 "charge_id": {"type": "string"},
+                 "amount":    {"type": "number"}},
+                 "required": ["charge_id"]}},
+            {"name": "get_payment_status",
+             "description": "Get the status of a charge by charge ID.",
+             "parameters": {"type": "dict", "properties": {
+                 "charge_id": {"type": "string"}},
+                 "required": ["charge_id"]}},
+        ],
+        "ground_truth": [{"charge_payment": {
+            "payment_method_id": ["pm_abc123"],
+            "amount": [49.99]}}],
+    },
+    {
+        "task_id": "multi_15",
+        "question": "Refund $20 from charge ID 'ch_xyz789'.",
+        "function": [
+            {"name": "charge_payment",
+             "description": "Charge a payment method a specified amount.",
+             "parameters": {"type": "dict", "properties": {
+                 "payment_method_id": {"type": "string"},
+                 "amount":            {"type": "number"}},
+                 "required": ["payment_method_id", "amount"]}},
+            {"name": "refund_payment",
+             "description": "Refund a previously completed charge.",
+             "parameters": {"type": "dict", "properties": {
+                 "charge_id": {"type": "string"},
+                 "amount":    {"type": "number"}},
+                 "required": ["charge_id"]}},
+            {"name": "get_payment_status",
+             "description": "Get the status of a charge by charge ID.",
+             "parameters": {"type": "dict", "properties": {
+                 "charge_id": {"type": "string"}},
+                 "required": ["charge_id"]}},
+        ],
+        "ground_truth": [{"refund_payment": {"charge_id": ["ch_xyz789"], "amount": [20, 20.0]}}],
+    },
+    # ── Translation / language ───────────────────────────────────────────
+    {
+        "task_id": "multi_16",
+        "question": "Detect what language the text 'Bonjour le monde' is written in.",
+        "function": [
+            {"name": "detect_language",
+             "description": "Detect the language of a given text.",
+             "parameters": {"type": "dict", "properties": {
+                 "text": {"type": "string"}},
+                 "required": ["text"]}},
+            {"name": "translate_text",
+             "description": "Translate text from one language to another.",
+             "parameters": {"type": "dict", "properties": {
+                 "text":            {"type": "string"},
+                 "target_language": {"type": "string"},
+                 "source_language": {"type": "string"}},
+                 "required": ["text", "target_language"]}},
+            {"name": "get_language_code",
+             "description": "Get the ISO 639-1 code for a language name.",
+             "parameters": {"type": "dict", "properties": {
+                 "language_name": {"type": "string"}},
+                 "required": ["language_name"]}},
+        ],
+        "ground_truth": [{"detect_language": {"text": ["Bonjour le monde"]}}],
+    },
+    {
+        "task_id": "multi_17",
+        "question": "Translate 'Thank you very much' into German.",
+        "function": [
+            {"name": "detect_language",
+             "description": "Detect the language of a given text.",
+             "parameters": {"type": "dict", "properties": {
+                 "text": {"type": "string"}},
+                 "required": ["text"]}},
+            {"name": "translate_text",
+             "description": "Translate text from one language to another.",
+             "parameters": {"type": "dict", "properties": {
+                 "text":            {"type": "string"},
+                 "target_language": {"type": "string"}},
+                 "required": ["text", "target_language"]}},
+            {"name": "get_language_code",
+             "description": "Get the ISO 639-1 code for a language name.",
+             "parameters": {"type": "dict", "properties": {
+                 "language_name": {"type": "string"}},
+                 "required": ["language_name"]}},
+        ],
+        "ground_truth": [{"translate_text": {
+            "text": ["Thank you very much"],
+            "target_language": ["German", "german", "de"]}}],
+    },
+    # ── Log / audit variants ─────────────────────────────────────────────
+    {
+        "task_id": "multi_18",
+        "question": "Retrieve the last 100 error-level log entries from the application log.",
+        "function": [
+            {"name": "get_logs",
+             "description": "Fetch log entries filtered by level and count.",
+             "parameters": {"type": "dict", "properties": {
+                 "level": {"type": "string", "enum": ["debug", "info", "warning", "error"]},
+                 "count": {"type": "integer"}},
+                 "required": ["level", "count"]}},
+            {"name": "clear_logs",
+             "description": "Delete all log entries at or below a given level.",
+             "parameters": {"type": "dict", "properties": {
+                 "level": {"type": "string"}},
+                 "required": ["level"]}},
+            {"name": "export_logs",
+             "description": "Export log entries to a file.",
+             "parameters": {"type": "dict", "properties": {
+                 "output_path": {"type": "string"},
+                 "level":       {"type": "string"}},
+                 "required": ["output_path"]}},
+        ],
+        "ground_truth": [{"get_logs": {"level": ["error"], "count": [100]}}],
+    },
+    {
+        "task_id": "multi_19",
+        "question": "Export all warning logs to the file '/var/log/warnings_export.txt'.",
+        "function": [
+            {"name": "get_logs",
+             "description": "Fetch log entries filtered by level and count.",
+             "parameters": {"type": "dict", "properties": {
+                 "level": {"type": "string"},
+                 "count": {"type": "integer"}},
+                 "required": ["level", "count"]}},
+            {"name": "clear_logs",
+             "description": "Delete all log entries at or below a given level.",
+             "parameters": {"type": "dict", "properties": {
+                 "level": {"type": "string"}},
+                 "required": ["level"]}},
+            {"name": "export_logs",
+             "description": "Export log entries to a file.",
+             "parameters": {"type": "dict", "properties": {
+                 "output_path": {"type": "string"},
+                 "level":       {"type": "string"}},
+                 "required": ["output_path"]}},
+        ],
+        "ground_truth": [{"export_logs": {
+            "output_path": ["/var/log/warnings_export.txt"],
+            "level":       ["warning", "warnings"]}}],
     },
 ]

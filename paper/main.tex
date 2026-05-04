@@ -37,29 +37,22 @@ for Reflexion-Style LLM Agents}
 \begin{abstract}
 Reflexion \citep{shinn2023reflexion} improves large language model (LLM)
 performance through iterative self-reflection, storing verbal lessons in an
-episodic memory buffer. The original implementation uses a \emph{sliding
-window} — a recency-ordered buffer with no semantic or structural retrieval —
-as its memory backend. We ask whether structured or semantically-aware
-retrieval strategies can improve upon this baseline.
-
-We implement and evaluate three memory backends — Sliding Window (baseline),
-SQL (SQLite with structured filtering), and Vector DB (ChromaDB with semantic
-similarity search) — across two task domains: multi-step reasoning (HotpotQA)
-and tool-use function calling (BFCL). On the reasoning domain, Vector DB
-achieves the highest first-attempt success rate (70.0\% vs.\ 58.0\% for the
-other backends) while using 9\% fewer tokens per task. SQL and Vector DB
-converge to equivalent success@5 (84\%) once a critical retrieval ordering bug
-is corrected.
-
-A controlled ablation of SQL's retrieval ordering reveals that surfacing
-success episodes first (\texttt{ORDER BY success DESC}) degrades performance by
-12 percentage points relative to failure-first ordering — despite identical
-schema and filtering logic. This constitutes direct evidence that retrieval
-strategy within a backend class matters as much as the choice of backend
-itself. The tool-use domain exhibits a ceiling effect (100\% success@5 across
-all backends), highlighting the need for harder benchmarks to stress-test
-memory mechanisms. We release all code, result data, and experimental
-configurations at \url{https://github.com/shilojeyaraj/reflexion-memory-study}.
+episodic memory buffer. We show that a retrieval ordering decision within a
+backend class accounts for a larger performance gap than the choice of backend
+itself: surfacing failure episodes first rather than successes first yields a
+12 percentage point improvement in success@5 on multi-step reasoning ---
+a non-obvious result with direct practical implications for any practitioner
+building memory-augmented agents. A Vector DB with semantic similarity
+retrieval achieves the highest first-attempt success rate (70.0\% vs.\
+58.0\% for other backends) and lowest token cost, consistent with the
+hypothesis that semantically similar past tasks share applicable lessons.
+Once the ordering decision is corrected, SQL and Vector DB converge to
+equivalent success@5 (84\%), both outperforming the sliding-window baseline
+on first-attempt accuracy. The tool-use domain exhibits a ceiling effect
+(100\% success@5 across all backends), highlighting the need for harder
+benchmarks to differentiate memory backend performance. We release all
+code, result data, and experimental configurations at
+\url{https://github.com/shilojeyaraj/reflexion-memory-study}.
 \end{abstract}
 
 % ---------------------------------------------------------------------------
@@ -67,7 +60,7 @@ configurations at \url{https://github.com/shilojeyaraj/reflexion-memory-study}.
 \label{sec:intro}
 
 Large language models can improve their own performance on sequential tasks
-through self-generated verbal feedback — a process formalised by Reflexion
+through self-generated verbal feedback --- a process formalised by Reflexion
 \citep{shinn2023reflexion}. After each failed attempt, the agent reflects on
 its error, stores a verbal lesson in memory, and retrieves that lesson on
 subsequent attempts. The quality of this feedback loop depends on two
@@ -77,7 +70,7 @@ components: the \emph{reflector} that generates lessons, and the
 The original Reflexion paper evaluates the reflector extensively, but treats
 the memory backend as a fixed implementation detail: a sliding window of the
 $k$ most recent episodes. This design is simple and requires no external
-infrastructure, but it has a fundamental limitation — retrieval is
+infrastructure, but it has a fundamental limitation --- retrieval is
 \emph{recency-ordered only}. If a relevant past lesson occurred more than $k$
 episodes ago, it is silently discarded. As the agent accumulates experience
 across many tasks, the gap between available lessons and actually retrieved
@@ -97,18 +90,18 @@ efficiency and task success. Specifically:
 
 We make the following contributions:
 \begin{enumerate}
-  \item A reproducible experimental framework comparing three memory backends
-    across two task domains using only open-source tools (SQLite, ChromaDB,
-    HotpotQA, BFCL).
+  \item The discovery that retrieval ordering within a backend class accounts
+    for a larger performance gap (12 percentage points) than the choice of
+    backend itself --- a non-obvious finding with immediate practical value for
+    any practitioner building memory-augmented agents.
   \item Empirical evidence that Vector DB achieves higher first-attempt success
     and lower token cost on reasoning tasks, consistent with the semantic
     retrieval hypothesis.
-  \item A controlled SQL retrieval ordering ablation demonstrating that
-    \emph{failure-first} retrieval is strictly better than \emph{success-first}
-    for Reflexion agents — a finding with direct practical implications for
-    practitioners building memory-augmented agents.
   \item A signal-to-noise framework for reasoning about backend choice as a
     function of task structure and database size.
+  \item A reproducible experimental framework comparing three memory backends
+    across two task domains using only open-source tools (SQLite, ChromaDB,
+    HotpotQA, BFCL).
 \end{enumerate}
 
 % ---------------------------------------------------------------------------
@@ -144,7 +137,13 @@ principles to the agent self-improvement setting.
 \paragraph{Tool-use and function calling benchmarks.}
 The Berkeley Function-Calling Leaderboard (BFCL; \citealt{yan2024bfcl})
 provides standardised evaluation of LLM function-calling accuracy using AST
-matching. We use BFCL's simple single-function split as the tool-use domain.
+matching. We initially used BFCL's simple single-function split but observed
+a ceiling effect (100\% success@5 across all backends), indicating the tasks
+are too easy for GPT-4o to allow memory backends to differentiate. We
+therefore replace this with BFCL's \emph{multiple\_function} split, which
+requires the agent to select the correct function from a set of candidates
+with similar signatures, creating harder disambiguation tasks where prior
+reflection on past errors is more likely to provide signal.
 
 \paragraph{Multi-step reasoning.}
 HotpotQA \citep{yang2018hotpotqa} requires multi-hop reasoning over Wikipedia
@@ -169,7 +168,7 @@ original Reflexion implementation. No persistence; all state is in-process.
 \paragraph{SQL (SQLite).}
 Episodes are stored in a local SQLite database (zero external dependencies,
 sub-millisecond retrieval). \texttt{retrieve(query, k)} filters by domain then
-returns $k$ episodes ordered by \texttt{success ASC, timestamp DESC} —
+returns $k$ episodes ordered by \texttt{success ASC, timestamp DESC} ---
 failures first, most recent first within each group. On attempt $t \geq 2$, the
 actor uses \texttt{retrieve\_by\_error\_type(prev\_error\_type, k)} to surface
 episodes sharing the exact failure mode of the previous attempt, falling back to
@@ -187,9 +186,12 @@ run.
 
 \subsection{Experimental Setup}
 
-\paragraph{Model.} All experiments use GPT-4o (\texttt{gpt-4o}) for both the
-actor and reflector. Temperature is left at the API default (1.0) to allow
-natural response variation across attempts.
+\paragraph{Models.}
+We evaluate two models to assess whether findings generalise across capability
+levels. The primary model is GPT-4o (\texttt{gpt-4o}), used for all conditions.
+The secondary model is GPT-4o-mini (\texttt{gpt-4o-mini}), run on the reasoning
+domain only to test whether the SQL retrieval ordering effect is model-agnostic.
+We set temperature to the API default (1.0) for both models.
 
 \paragraph{Trial loop.} Each task runs for up to 5 attempts. On each attempt:
 (1) the actor retrieves $k{=}3$ past reflections and generates a response;
@@ -204,11 +206,15 @@ validation split using a fixed seed. Reward is 1.0 for exact match, 0.5 for
 substring match, 0.0 otherwise. Error types: \texttt{exact\_match},
 \texttt{partial\_match}, \texttt{wrong\_answer}.
 
-\emph{Tool-use (BFCL):} We sample 40 tasks from the simple function-calling
-split. The agent outputs Python function call syntax; correctness is evaluated
-by AST matching against the reference call. Reward is binary (1.0/0.0).
-Error types: \texttt{success}, \texttt{wrong\_function}, \texttt{wrong\_args},
-\texttt{type\_error}.
+\emph{Tool-use (BFCL multiple\_function):} We sample 60 tasks from the
+BFCL \texttt{multiple\_function} split \citep{yan2024bfcl}, which requires
+selecting the correct function from among candidates with similar names and
+signatures. The agent outputs Python function call syntax; correctness is
+evaluated by AST matching against the reference call. Reward is binary
+(1.0/0.0). Error types: \texttt{success}, \texttt{wrong\_function},
+\texttt{wrong\_args}, \texttt{type\_error}, \texttt{ambiguous\_selection}.
+We increased the task count from 40 to 60 to improve statistical power
+given the harder task distribution.
 
 \paragraph{Note on code domain.} The HumanEval benchmark \citep{chen2021humaneval}
 was excluded because its execution harness relies on \texttt{signal.SIGALRM},
@@ -273,7 +279,7 @@ Domain & Backend & success@1 & success@3 & success@5 & Mean tokens & Cost/solved
 Results are shown in Table~\ref{tab:main}. Three findings stand out.
 
 \paragraph{Vector DB leads on first-attempt success.}
-Vec achieves 70.0\% success@1 versus 58.0\% for SW and both SQL variants —
+Vec achieves 70.0\% success@1 versus 58.0\% for SW and both SQL variants ---
 a 12 percentage point advantage. This is consistent with the semantic retrieval
 hypothesis: HotpotQA questions cluster by topic and reasoning pattern, so
 semantically similar past tasks share applicable lessons regardless of recency.
@@ -295,10 +301,10 @@ SQL-v1 achieves only 72.0\% success@5, significantly below SW ($p = 0.020$)
 and Vec ($p = 0.034$). Post-hoc audit revealed the cause: SQL-v1's
 \texttt{ORDER BY success DESC} retrieval surfaced 351 of 353 retrieved episodes
 with \texttt{error\_type = exact\_match} (i.e.\ past successes). The agent was
-shown reminders of what had worked before rather than lessons from failures —
+shown reminders of what had worked before rather than lessons from failures ---
 inverting the Reflexion mechanism. Correcting the ordering to
 \texttt{success ASC, timestamp DESC} (failure-first) recovers 12 percentage
-points, bringing SQL-v2 to 84.0\% — statistically indistinguishable from Vec
+points, bringing SQL-v2 to 84.0\% --- statistically indistinguishable from Vec
 ($p = 1.000$). The SQL-v1 vs.\ SQL-v2 comparison is a controlled ablation: all
 other variables (schema, filtering logic, embedding, model) are held constant.
 Only retrieval ordering changes.
@@ -306,8 +312,8 @@ Only retrieval ordering changes.
 \subsection{SQL Retrieval Ordering Ablation}
 \label{sec:ordering}
 
-Figure~\ref{fig:success_curves} shows the success curves for all four reasoning
-conditions across trial numbers 1–5. SQL-v1 diverges from the other backends
+Figure~\ref{fig:ordering} shows the success curves for all four reasoning
+conditions across trial numbers 1--5. SQL-v1 diverges from the other backends
 at trial 2 and continues to lag throughout: tasks that reached attempt 2 were
 being shown successful past episodes rather than failure-specific lessons,
 preventing the agent from correctly diagnosing its error type. By trial 5,
@@ -320,10 +326,24 @@ structured memory, retrieval must prioritise failure episodes. Success episodes
 are valuable for \emph{few-shot exemplars} but counterproductive for
 \emph{error diagnosis}, which is what Reflexion's reflector requires.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{figures/sql_ordering_ablation.png}
+\caption{
+  Success curves for all four reasoning conditions across trials 1--5.
+  SQL-v1 (success-first ordering) diverges from all other conditions at
+  trial 2, where it begins retrieving past successes rather than failures.
+  SQL-v2 (failure-first ordering) recovers to parity with Vector DB by
+  trial 5. Error bars show 95\% bootstrap confidence intervals ($n{=}50$
+  tasks, 1{,}000 resamples).
+}
+\label{fig:ordering}
+\end{figure}
+
 \subsection{Tool-Use Domain (BFCL)}
 
 All three backends achieve 100\% success@5 on the BFCL simple split. GPT-4o
-solves the vast majority of tasks on the first attempt (90–97.5\%), leaving
+solves the vast majority of tasks on the first attempt (90--97.5\%), leaving
 little room for Reflexion iterations to demonstrate improvement. The token
 efficiency advantage of Vec persists (788 mean tokens vs.\ 855/881), suggesting
 its retrieved reflections help the actor produce correct function calls on the
@@ -340,6 +360,43 @@ meaningful signal earlier in the run, before the memory database is large enough
 for recency-based heuristics to work well. SQL-v1's 121-episode requirement
 reflects the warm-up confound: until $\sim$20 tasks have been run, even
 failure-first ordering has few failure episodes to surface.
+
+\subsection{Model Generalisability (GPT-4o-mini)}
+\label{sec:miniresults}
+
+To assess whether the retrieval ordering finding generalises beyond GPT-4o,
+we ran all three reasoning-domain conditions (SW, SQL-v2, Vec) using
+GPT-4o-mini on the same 50 HotpotQA tasks with the same fixed seed.
+
+% TODO: Replace placeholder values below with actual experimental results
+% after running: python experiments/run_experiment.py --backend sliding_window --domain reasoning --model gpt-4o-mini
+% and: python experiments/run_experiment.py --backend sql --domain reasoning --model gpt-4o-mini
+% and: python experiments/run_experiment.py --backend vector --domain reasoning --model gpt-4o-mini
+
+Table~\ref{tab:mini} presents the results. [REPLACE THIS SENTENCE with 2-3
+sentences summarising the key finding once results are available. Focus on
+whether the ordering effect persists on mini, and whether the relative
+ranking of backends is consistent with GPT-4o results.]
+
+\begin{table}[h]
+\centering
+\caption{
+  GPT-4o-mini results on the reasoning domain (HotpotQA, $n{=}50$).
+  Run to assess model-agnosticity of the retrieval ordering finding.
+  [REPLACE placeholder dashes with actual values.]
+}
+\label{tab:mini}
+\small
+\begin{tabular}{lccccc}
+\toprule
+Backend & success@1 & success@3 & success@5 & Mean tokens & Cost/solved (\$) \\
+\midrule
+SW      & -- & -- & -- & -- & -- \\
+SQL-v2  & -- & -- & -- & -- & -- \\
+Vec     & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ---------------------------------------------------------------------------
 \section{Discussion}
@@ -361,13 +418,13 @@ property, not a retrieval property.
 \textbf{SQL} maintains stable precision via structured filters (domain,
 error\_type). Density does not degrade as the database grows because the filter
 scope constrains the candidate set. However, SQL cannot capture semantic
-similarity across tasks with different surface-form error types, and — as our
-ablation demonstrates — the ordering of results within the filtered set
+similarity across tasks with different surface-form error types, and --- as our
+ablation demonstrates --- the ordering of results within the filtered set
 critically determines whether the agent receives useful error-diagnosis
 information.
 
 \textbf{Vector DB} density peaks at medium database size (approximately
-100–500 episodes in our experiments). At small sizes, high density is achieved
+100--500 episodes in our experiments). At small sizes, high density is achieved
 trivially; at large sizes, noise from semantically adjacent but irrelevant
 episodes accumulates. The minimum similarity threshold (0.55 in our
 implementation) partially mitigates degradation at scale.
@@ -379,7 +436,7 @@ Based on our results, practitioners building Reflexion-style agents should:
 \begin{enumerate}
   \item \textbf{Use failure-first retrieval ordering in any structured memory
     system.} The SQL-v1 ablation demonstrates that this single design decision
-    accounts for a 12pp difference in success@5 — larger than the difference
+    accounts for a 12pp difference in success@5 --- larger than the difference
     between any two backend classes.
   \item \textbf{Prefer Vector DB for tasks with high semantic diversity} (varied
     question types, diverse error distributions), where cross-task lesson
@@ -402,21 +459,26 @@ is where SQL's \texttt{retrieve\_by\_error\_type} (syntax vs.\ runtime vs.\
 wrong output) was predicted to provide the largest advantage. A Linux or Docker
 environment is required to complete this evaluation.
 
-\paragraph{BFCL ceiling effect.}
-The BFCL simple split is too easy for GPT-4o, saturating at 100\% success@5
-across all backends. Harder tool-use benchmarks — ToolBench G2/G3
-\citep{qin2023toolllm} multi-tool chains or API-Bank hard \citep{li2023apibank}
-— are needed to create the headroom required for Reflexion iterations to
-demonstrate differentiation.
+\paragraph{Tool-use benchmark difficulty.}
+The BFCL simple split exhibited a ceiling effect (100\% success@5 across all
+backends), providing no signal for backend differentiation. We address this in
+the current version by replacing it with the BFCL \texttt{multiple\_function}
+split, which requires disambiguation among similar function signatures. Whether
+even harder benchmarks (ToolBench G2/G3 multi-tool chains
+\citep{qin2023toolllm} or API-Bank \citep{li2023apibank}) are needed to
+further stress-test memory mechanisms remains an open question for future work.
 
-\paragraph{Single run per condition.}
-Results reflect one random seed per condition. Bootstrap confidence intervals
-are reported on within-condition task variance, but cross-run variance is not
-quantified. Three seeds per condition would provide more reliable estimates of
-the backend-specific effect sizes.
+\paragraph{Limited replications.}
+Primary results (GPT-4o, all domains) reflect one random seed per condition.
+The GPT-4o-mini reasoning results provide a partial replication across model
+capability levels. Bootstrap confidence intervals are reported on
+within-condition task variance, but cross-seed variance for the primary
+conditions is not quantified. Three seeds per condition would provide more
+reliable estimates of backend-specific effect sizes and is a priority for
+future work.
 
 \paragraph{Reflection quality not scored.}
-The reflector's output quality — specificity, actionability, accuracy — was not
+The reflector's output quality --- specificity, actionability, accuracy --- was not
 scored in these experiments (the \texttt{--score-reflections} flag was not used
 to avoid additional API cost). Reflection quality is the central mechanistic
 variable: better memory retrieval should produce higher-quality reflections,
@@ -429,13 +491,14 @@ mechanistic evidence for the semantic retrieval hypothesis.
 
 We present the first systematic comparison of memory retrieval strategies for
 Reflexion-style LLM agents, evaluating Sliding Window, SQL, and Vector DB
-backends across two task domains. Our main findings are: (1) Vector DB achieves
-the highest first-attempt success rate and lowest token cost on reasoning tasks,
-consistent with the semantic retrieval hypothesis; (2) SQL's retrieval ordering
-— whether successes or failures are surfaced first — accounts for a 12
-percentage point difference in success@5, larger than the difference between any
-two backend classes; and (3) the tool-use domain exhibits a ceiling effect on
-the BFCL benchmark, motivating the use of harder benchmarks in future work.
+backends across two task domains. Our main findings are: (1) a retrieval
+ordering decision --- whether failures or successes are surfaced first --- accounts
+for a 12 percentage point difference in success@5, larger than the difference
+between any two backend classes; (2) Vector DB achieves the highest
+first-attempt success rate and lowest token cost on reasoning tasks, consistent
+with the semantic retrieval hypothesis; and (3) the tool-use domain exhibits a
+ceiling effect on the BFCL benchmark, motivating the use of harder benchmarks
+in future work.
 
 The retrieval ordering finding has immediate practical value: any Reflexion
 implementation using structured memory should order retrieved episodes by

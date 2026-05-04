@@ -284,6 +284,115 @@ def plot_k_ablation(k_ablation_results: dict, output_path: str) -> None:
     logger.info("Saved k ablation plot to %s", output_path)
 
 
+def plot_sql_ordering_ablation(results_dir: str, output_path: str) -> None:
+    """
+    Plot success curves for the SQL ordering ablation on the reasoning domain.
+
+    Produces a single figure with:
+    - x-axis: trial number (1 through 5)
+    - y-axis: cumulative success rate (fraction of tasks solved by trial k)
+    - Four lines: SW (gray), SQL-v1 (red), SQL-v2 (blue), Vec (coral)
+    - Annotation: vertical dashed line at trial 2 marking SQL-v1 divergence
+    - Error bars: 95% bootstrap CI (1000 resamples) at each point
+    - Legend in upper-left
+
+    File naming convention in results_dir:
+      sliding_window_reasoning_*.json  → SW
+      sql_reasoning_20260423_*.json    → SQL-v1 (the buggy run from Apr 23)
+      sql_reasoning_20260503_*.json    → SQL-v2 (the fixed run from May 3)
+      vector_reasoning_*.json          → Vec
+
+    Args:
+        results_dir: directory containing JSON result files
+        output_path: path to save the PNG figure (300 dpi)
+    """
+    CONDITIONS = {
+        "SW":     ("#888780", None),
+        "SQL-v1": ("#CC3333", None),
+        "SQL-v2": ("#378ADD", None),
+        "Vec":    ("#D85A30", None),
+    }
+
+    def _load_reasoning(results_dir: str) -> dict[str, list]:
+        data: dict[str, list] = {k: [] for k in CONDITIONS}
+        for path in sorted(Path(results_dir).glob("*_reasoning_*.json")):
+            stem = path.stem
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    records = json.load(f)
+            except Exception as e:
+                logger.warning("Could not load %s: %s", path, e)
+                continue
+            if not isinstance(records, list) or not records:
+                continue
+
+            # Route to the correct condition based on filename
+            if stem.startswith("sliding_window"):
+                key = "SW"
+            elif stem.startswith("vector"):
+                key = "Vec"
+            elif stem.startswith("sql") and "20260503" in stem:
+                key = "SQL-v2"
+            elif stem.startswith("sql"):
+                key = "SQL-v1"
+            else:
+                continue
+
+            # Only take one file per condition (last one wins for duplicates)
+            data[key] = records
+
+        return data
+
+    data = _load_reasoning(results_dir)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    max_k = 5
+
+    for label, (color, _) in CONDITIONS.items():
+        results = data.get(label, [])
+        if not results:
+            logger.warning("plot_sql_ordering_ablation: no data for condition %s", label)
+            continue
+
+        ks = list(range(1, max_k + 1))
+        means, lowers, uppers = [], [], []
+
+        for k in ks:
+            per_task = [
+                1.0 if any(rew == 1.0 for rew in r.get("per_attempt_rewards", [])[:k])
+                else 0.0
+                for r in results
+            ]
+            mean = float(np.mean(per_task))
+            means.append(mean)
+            lo, hi = _bootstrap_ci(per_task, n_boot=1000)
+            lowers.append(lo)
+            uppers.append(hi)
+
+        linestyle = "--" if label == "SQL-v1" else "-"
+        ax.plot(ks, means, color=color, marker="o", label=label,
+                linewidth=2, linestyle=linestyle)
+        ax.fill_between(ks, lowers, uppers, color=color, alpha=0.12)
+
+    # Annotate the trial-2 divergence point
+    ax.axvline(x=2, color="#CC3333", linestyle=":", linewidth=1.2, alpha=0.7)
+    ax.text(2.05, 0.45, "SQL-v1 diverges here", color="#CC3333",
+            fontsize=9, va="center")
+
+    ax.set_title("SQL Retrieval Ordering Ablation (Reasoning Domain)", fontweight="bold")
+    ax.set_xlabel("Trial number")
+    ax.set_ylabel("Cumulative success rate")
+    ax.set_xticks(list(range(1, max_k + 1)))
+    ax.set_ylim(0, 1)
+    ax.legend(loc="upper left", fontsize=10)
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    logger.info("Saved SQL ordering ablation plot to %s", output_path)
+
+
 def plot_all(results_dir: str, output_dir: str) -> None:
     """
     Load all *.json result files from results_dir and generate all four plots.
